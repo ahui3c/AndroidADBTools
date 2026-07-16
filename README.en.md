@@ -32,6 +32,17 @@ Current version: **v1.15.6**
 - `adb.exe` from Android Platform Tools
 - Developer options plus USB debugging or wireless debugging enabled on the Android device
 
+## Get Android SDK Platform-Tools
+
+Google distributes `adb.exe` as part of Android SDK Platform-Tools:
+
+- Official download page: [SDK Platform-Tools release notes](https://developer.android.com/tools/releases/platform-tools)
+- On that page, choose **Download SDK Platform-Tools for Windows**, accept the terms, and download the ZIP archive.
+- Extract the archive. `adb.exe` is inside the `platform-tools` folder; click **Select adb.exe** in this application and choose that file.
+- If Android Studio is already installed, Platform-Tools can also be installed or updated through **SDK Manager > SDK Tools > Android SDK Platform-Tools**. The application normally detects the default SDK location automatically.
+
+Use the latest version from the official page. Google states that current Platform-Tools releases are backward compatible with older Android versions, so a separate legacy ADB download is normally unnecessary.
+
 ## Download and Use
 
 1. Download the latest `AndroidADBTools.exe` or full ZIP package from [Releases](https://github.com/ahui3c/AndroidADBTools/releases).
@@ -89,4 +100,3 @@ This includes the ADB path, APK groups and order, window dimensions, download de
 - Liao Ah-Hui (廖阿輝)
 - Email: [chehui@gmail.com](mailto:chehui@gmail.com)
 - Website: [https://ahui3c.com](https://ahui3c.com)
-

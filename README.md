@@ -32,6 +32,17 @@
 - Android Platform Tools 中的 `adb.exe`
 - 手機已開啟「開發人員選項」及「USB 偵錯」或「無線偵錯」
 
+## 取得 Android SDK Platform-Tools
+
+`adb.exe` 包含在 Google 官方的 Android SDK Platform-Tools 中：
+
+- 官方下載頁：[SDK Platform-Tools release notes](https://developer.android.com/tools/releases/platform-tools)
+- 進入頁面後選擇 **Download SDK Platform-Tools for Windows**，閱讀並同意條款後下載 ZIP。
+- 解壓縮後，`adb.exe` 位於 `platform-tools` 資料夾內；在本工具按「選擇 adb.exe」並指定該檔案即可。
+- 若已安裝 Android Studio，也可透過 **SDK Manager > SDK Tools > Android SDK Platform-Tools** 安裝或更新；程式通常會自動找到預設 SDK 位置。
+
+建議使用官方頁面提供的最新版本。Google 表示 Platform-Tools 向下相容舊版 Android，因此一般不需要另外尋找舊版 ADB。
+
 ## 下載與使用
 
 1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 下載最新版 `AndroidADBTools.exe` 或完整 ZIP。
@@ -89,4 +100,3 @@ powershell -ExecutionPolicy Bypass -File .\Build.ps1
 - 廖阿輝
 - 郵件：[chehui@gmail.com](mailto:chehui@gmail.com)
 - 網站：[https://ahui3c.com](https://ahui3c.com)
-
