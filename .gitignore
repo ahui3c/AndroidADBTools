@@ -1,0 +1,7 @@
+bin/
+obj/
+dist/*.pdb
+dist/APKs/
+*.user
+assets/app-icon-chroma.png
+release/
