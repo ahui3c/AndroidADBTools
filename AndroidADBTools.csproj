@@ -32,6 +32,15 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <None Include="App.config" />
+    <None Include="LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="README.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="README.en.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="assets\app-icon.ico" />
     <None Include="assets\app-icon.png" />
   </ItemGroup>
