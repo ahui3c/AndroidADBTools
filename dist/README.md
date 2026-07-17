@@ -6,9 +6,13 @@
   <img src="assets/app-icon.png" width="128" alt="Android ADB 快速工具圖示">
 </p>
 
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="GNU AGPL v3"></a>
+</p>
+
 一套免安裝的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v1.15.6**
+目前版本：**v1.16.0**
 
 ## 主要功能
 
@@ -94,6 +98,14 @@ powershell -ExecutionPolicy Bypass -File .\Build.ps1
 ```
 
 內容包含 ADB 路徑、APK 組合、組合順序、視窗大小、下載位置與檔案大小過濾設定。
+
+## 授權
+
+從 **v1.16.0** 起，本專案依 [GNU Affero General Public License v3.0](LICENSE) 授權，SPDX 識別碼為 `AGPL-3.0-only`。你可以使用、研究、修改與散布本程式，但散布修改版或提供符合 AGPL 網路互動條件的版本時，必須依授權條款提供完整對應原始碼。
+
+已經發布的 **v1.15.6 與更早版本仍維持原有 MIT License**；授權變更不會撤回使用者已取得的 MIT 權利。舊版 MIT 文字另存於 [LICENSE-MIT-LEGACY](LICENSE-MIT-LEGACY)，僅供歷史版本對照。
+
+本程式按「現狀」提供，不附帶任何明示或默示擔保。完整條款以 [LICENSE](LICENSE) 為準。
 
 ## 作者
 

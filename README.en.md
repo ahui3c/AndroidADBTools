@@ -6,9 +6,13 @@
   <img src="assets/app-icon.png" width="128" alt="Android ADB Quick Tools icon">
 </p>
 
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="GNU AGPL v3"></a>
+</p>
+
 A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v1.15.6**
+Current version: **v1.16.0**
 
 ## Features
 
@@ -94,6 +98,14 @@ User settings are stored in:
 ```
 
 This includes the ADB path, APK groups and order, window dimensions, download destination, and file-size filtering preference.
+
+## License
+
+Starting with **v1.16.0**, this project is licensed under the [GNU Affero General Public License v3.0](LICENSE), SPDX identifier `AGPL-3.0-only`. You may use, study, modify, and redistribute the software, subject to the source-code and other obligations in the license when conveying modified versions or providing versions covered by AGPL's remote-network interaction terms.
+
+Previously released **v1.15.6 and earlier versions remain under their original MIT License**. This change does not revoke rights already granted for those releases. The former MIT text is preserved in [LICENSE-MIT-LEGACY](LICENSE-MIT-LEGACY) for historical reference only.
+
+This program is provided as-is, without any warranty. See [LICENSE](LICENSE) for the complete terms.
 
 ## Author
 

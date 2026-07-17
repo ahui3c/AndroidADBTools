@@ -1,3 +1,13 @@
+/*
+ * Android ADB Quick Tools
+ * Copyright (C) 2026 Liao Ah-Hui (廖阿輝)
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License version 3.
+ * This program is distributed WITHOUT ANY WARRANTY; see LICENSE for details.
+ * SPDX-License-Identifier: AGPL-3.0-only
+ */
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -20,8 +30,9 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("Android ADB 連線確認與 APK 快速安裝工具")]
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
-[assembly: AssemblyVersion("1.15.6.0")]
-[assembly: AssemblyFileVersion("1.15.6.0")]
+[assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
+[assembly: AssemblyVersion("1.16.0.0")]
+[assembly: AssemblyFileVersion("1.16.0.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -2194,10 +2205,10 @@ namespace AndroidADBTools
                 aboutForm.AutoScaleMode = AutoScaleMode.None;
                 aboutForm.ShowIcon = false;
                 aboutForm.MinimizeBox = false;
-                aboutForm.Size = new Size(Math.Min(ScaleValue(620, scale), maximumWidth),
-                    Math.Min(ScaleValue(440, scale), maximumHeight));
+                aboutForm.Size = new Size(Math.Min(ScaleValue(660, scale), maximumWidth),
+                    Math.Min(ScaleValue(500, scale), maximumHeight));
                 aboutForm.MinimumSize = new Size(Math.Min(ScaleValue(520, scale), maximumWidth),
-                    Math.Min(ScaleValue(390, scale), maximumHeight));
+                    Math.Min(ScaleValue(440, scale), maximumHeight));
                 aboutForm.Padding = ScalePadding(new Padding(28, 24, 28, 20), scale);
 
                 TableLayoutPanel layout = new TableLayoutPanel
@@ -2205,7 +2216,7 @@ namespace AndroidADBTools
                     Dock = DockStyle.Fill,
                     BackColor = Bg,
                     ColumnCount = 1,
-                    RowCount = 7,
+                    RowCount = 8,
                     Margin = new Padding(0)
                 };
                 layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -2214,6 +2225,7 @@ namespace AndroidADBTools
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(62, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(50, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(54, scale)));
                 aboutForm.Controls.Add(layout);
@@ -2252,6 +2264,11 @@ namespace AndroidADBTools
                 email.LinkClicked += delegate { OpenExternalLink("mailto:chehui@gmail.com"); };
                 LinkLabel website = NewAboutLink("網站：https://ahui3c.com");
                 website.LinkClicked += delegate { OpenExternalLink("https://ahui3c.com"); };
+                LinkLabel license = NewAboutLink("授權：GNU AGPLv3｜無任何擔保｜檢視授權與原始碼");
+                license.LinkClicked += delegate
+                {
+                    OpenExternalLink("https://github.com/ahui3c/AndroidADBTools/blob/main/LICENSE");
+                };
                 FlowLayoutPanel actions = new FlowLayoutPanel
                 {
                     Dock = DockStyle.Fill,
@@ -2272,7 +2289,8 @@ namespace AndroidADBTools
                 layout.Controls.Add(author, 0, 3);
                 layout.Controls.Add(email, 0, 4);
                 layout.Controls.Add(website, 0, 5);
-                layout.Controls.Add(actions, 0, 6);
+                layout.Controls.Add(license, 0, 6);
+                layout.Controls.Add(actions, 0, 7);
                 ApplySmoothTextRendering(aboutForm);
                 aboutForm.ShowDialog(this);
             }
