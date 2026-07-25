@@ -12,16 +12,23 @@
 
 A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v1.16.0**
+Current version: **v2.0.1**
+
+[View the complete changelog](CHANGELOG.md)
 
 ## Features
 
 - Detects `adb.exe` and reports connected, offline, and unauthorized devices.
-- Supports USB debugging and Wi-Fi wireless debugging, with built-in connection instructions.
+- Includes a Wi-Fi debugging manager for pairing, connecting, and disconnecting with the phone IP, pairing port, six-digit code, and debugging port.
+- Saves paired-device records, supports automatic reconnection at startup, discovers LAN devices through mDNS, and checks ADB version compatibility.
+- Supports multiple connected devices with model, serial, and USB/Wi-Fi labels, remembers the last primary device, and can install APKs to every connected device.
 - Creates multiple reusable APK groups and installs every APK sequentially with per-file status reporting.
+- Hover over an APK list item to view its complete file name and full path when columns are truncated.
+- Reorders groups by drag and drop; custom groups can be renamed by double-clicking, and the order is saved automatically.
 - Scans subfolders under the local `APKs` directory and exposes them as protected, folder-synchronized groups.
-- Adds APKs to a group by drag and drop, or immediately installs one or more dropped APK files.
-- Reads and adjusts device brightness using a slider, numeric input, `+` / `-` keys, or the mouse wheel.
+- The split **Quick Install / Transfer** page installs dropped APKs on the left. On the right, choose `Download`, `DCIM`, `Pictures`, or the shared-storage root before dropping files or folders; directory structure is preserved.
+- Reads and adjusts device brightness using a slider, numeric input, or the `+` / `-` keys.
+- Adds measured-nit automatic brightness control with ArgyllCMS `spotread` and an external colorimeter. A closed loop repeatedly measures and adjusts Android brightness while the original manual controls remain available.
 - Controls auto brightness, 10-minute screen timeout, maximum timeout, and stay-awake-while-charging independently.
 - Applies and verifies each quick setting separately, so one failure does not stop the remaining settings.
 - Sets media volume to minimum or maximum, opens a URL on the phone, and saves a phone screenshot as PNG.
@@ -35,6 +42,17 @@ Current version: **v1.16.0**
 - .NET Framework 4.8
 - `adb.exe` from Android Platform Tools
 - Developer options plus USB debugging or wireless debugging enabled on the Android device
+
+## Wi-Fi Pairing and Compatibility
+
+Click **Wi-Fi Connection** on the main screen to manage wireless debugging directly:
+
+1. On Android 11 (API 30) or later, open **Developer options > Wireless debugging > Pair device with pairing code**. Enter the displayed IP address, pairing port, and six-digit code, then click **Start pairing**.
+2. Return to the main Wireless debugging screen and enter the debugging connection port shown under **IP address & port**, then connect. The debugging port is normally different from the pairing port.
+3. mDNS discovery lists pairing and debugging services on the local network; double-click a result to fill the matching fields.
+4. The app can save device records and reconnect them at startup. Update the debugging port if Android generates a new one.
+
+Pairing-code support requires an ADB release with `adb pair`; Platform Tools 30.0.0 or later is recommended, and the latest official release is preferred. Android 10 (API 29) and earlier do not provide the built-in pairing-code workflow: authorize over USB first, switch ADB to `tcpip 5555`, and then connect wirelessly. The computer and phone must be on the same mutually reachable network. Guest Wi-Fi, client isolation, enterprise firewalls, or OEM restrictions can prevent mDNS discovery or wireless connections.
 
 ## Get Android SDK Platform-Tools
 
@@ -79,6 +97,28 @@ Each direct child folder becomes an installation group when the app starts. APK 
 - The size filter applies to each individual file, not the total archive size.
 - Both USB and Wi-Fi ADB work; USB is recommended for large backups.
 
+## Quick Transfer to the Device
+
+- Open **Quick Install / Transfer** and drop files or folders on the right-hand transfer area.
+- Select the device destination first. The default is `/sdcard/Download/`; `/sdcard/DCIM/`, `/sdcard/Pictures/`, and the shared-storage root `/sdcard/` are also available.
+- Dropped items are immediately sent to the selected destination.
+- Dropped folders retain their top-level folder name and complete subdirectory structure.
+- Each dropped item is processed independently; one failure does not stop the remaining transfers, and details are written to the execution log.
+
+## Measured-Nit Automatic Brightness
+
+The upper part of the **Brightness** page retains all manual controls. The lower part adds closed-loop calibration with an external colorimeter:
+
+1. Download the Windows build from the [official ArgyllCMS website](https://www.argyllcms.com/) and select `bin\spotread.exe` in the app. ArgyllCMS is not bundled with this project.
+2. Connect the phone and colorimeter, then place the Calibrite Display Plus HL sensor flat against the center of the display.
+3. Open the white test image on the phone and make sure it is truly full-screen, with no viewer controls or notifications covering it.
+4. Run **Test measurement** first. Once an absolute emissive Y reading is available, enter the target (for example, 200 nit) and tolerance, then start automatic adjustment.
+5. The app disables Android auto brightness and repeatedly changes brightness, waits for stabilization, and runs `spotread -e -O`. It keeps the Android value whose measured luminance is closest to the target.
+
+An optional `.ccss` or `.ccmx` display correction can reduce meter/display spectral mismatch, especially with OLED panels. This feature controls measured white luminance only; it is not a complete color/ICC calibration and cannot enable HDR or OEM high-brightness modes. If the target is outside the phone's current range, the closest measured result is retained and reported.
+
+**Calibrite Display Plus HL compatibility:** as of ArgyllCMS 3.5.0, the official instrument list explicitly names earlier ColorChecker Display-family devices but does not explicitly list Display Plus HL. HL support is therefore experimental in this application. The test measurement is authoritative: calibration starts only if `spotread` can detect the instrument and return a reading. Use the latest ArgyllCMS release, close other calibration software that may own the device, and check its driver and USB connection if detection fails.
+
 ## Build from Source
 
 Run the following command in PowerShell:
@@ -97,7 +137,7 @@ User settings are stored in:
 %LOCALAPPDATA%\AndroidADBTools\settings.json
 ```
 
-This includes the ADB path, APK groups and order, window dimensions, download destination, and file-size filtering preference.
+This includes the ADB path, last primary device, saved Wi-Fi devices and auto-reconnect preference, install-to-all-devices preference, APK groups and order, window dimensions, download destination, file-size filtering preference, `spotread` and correction paths, target nit, and tolerance.
 
 ## License
 

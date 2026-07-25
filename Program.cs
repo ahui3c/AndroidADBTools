@@ -17,6 +17,7 @@ using System.Drawing.Text;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -27,12 +28,12 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Android ADB 快速工具")]
-[assembly: AssemblyDescription("Android ADB 連線確認與 APK 快速安裝工具")]
+[assembly: AssemblyDescription("Android ADB 連線確認、APK 快速安裝與檔案傳輸工具")]
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("1.16.0.0")]
-[assembly: AssemblyFileVersion("1.16.0.0")]
+[assembly: AssemblyVersion("2.0.1.0")]
+[assembly: AssemblyFileVersion("2.0.1.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -76,6 +77,14 @@ namespace AndroidADBTools
         public string DownloadFolder { get; set; }
         public bool SkipLargeDownloadFiles { get; set; }
         public decimal MaxDownloadFileSizeGb { get; set; }
+        public string SelectedDeviceSerial { get; set; }
+        public bool InstallToAllDevices { get; set; }
+        public List<WifiDeviceRecord> WifiDevices { get; set; }
+        public bool WifiAutoReconnect { get; set; }
+        public string SpotreadPath { get; set; }
+        public string SpotreadCorrectionPath { get; set; }
+        public decimal AutoBrightnessTargetNit { get; set; }
+        public decimal AutoBrightnessToleranceNit { get; set; }
 
         public AppSettings()
         {
@@ -85,6 +94,45 @@ namespace AndroidADBTools
             DownloadFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Android手機資料下載");
             SkipLargeDownloadFiles = true;
             MaxDownloadFileSizeGb = 2M;
+            SelectedDeviceSerial = "";
+            WifiDevices = new List<WifiDeviceRecord>();
+            SpotreadPath = "";
+            SpotreadCorrectionPath = "";
+            AutoBrightnessTargetNit = 200M;
+            AutoBrightnessToleranceNit = 2M;
+        }
+    }
+
+    public sealed class WifiDeviceRecord
+    {
+        public string Host { get; set; }
+        public int PairingPort { get; set; }
+        public int DebugPort { get; set; }
+        public string DisplayName { get; set; }
+        public DateTime LastConnected { get; set; }
+
+        public WifiDeviceRecord()
+        {
+            Host = "";
+            DisplayName = "Android 裝置";
+        }
+
+        public string DebugEndpoint
+        {
+            get
+            {
+                if (String.IsNullOrWhiteSpace(Host) || DebugPort <= 0) return "";
+                return MainForm.FormatNetworkEndpoint(Host, DebugPort);
+            }
+        }
+
+        public override string ToString()
+        {
+            string endpoint = DebugEndpoint;
+            if (String.IsNullOrWhiteSpace(endpoint))
+                endpoint = String.IsNullOrWhiteSpace(Host) ? "尚未設定偵錯位址" : Host;
+            string name = String.IsNullOrWhiteSpace(DisplayName) ? "Android 裝置" : DisplayName;
+            return name + "　｜　" + endpoint;
         }
     }
 
@@ -131,6 +179,48 @@ namespace AndroidADBTools
         public string State { get; set; }
         public string Model { get; set; }
         public string Product { get; set; }
+
+        public string DisplayName
+        {
+            get { return String.IsNullOrWhiteSpace(Model) ? "Android 裝置" : Model; }
+        }
+
+        public bool IsWireless
+        {
+            get
+            {
+                string serial = Serial ?? "";
+                return serial.IndexOf(':') >= 0 ||
+                    serial.IndexOf("_adb-tls", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    serial.StartsWith("adb-", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        public string ConnectionLabel { get { return IsWireless ? "Wi-Fi" : "USB"; } }
+
+        public override string ToString()
+        {
+            return DisplayName + "　｜　" + (Serial ?? "") + "　｜　" + ConnectionLabel;
+        }
+    }
+
+    public sealed class MdnsServiceInfo
+    {
+        public string Name { get; set; }
+        public string ServiceType { get; set; }
+        public string Host { get; set; }
+        public int Port { get; set; }
+
+        public bool IsPairing
+        {
+            get { return (ServiceType ?? "").IndexOf("pairing", StringComparison.OrdinalIgnoreCase) >= 0; }
+        }
+
+        public override string ToString()
+        {
+            return (IsPairing ? "配對" : "偵錯") + "　｜　" + MainForm.FormatNetworkEndpoint(Host, Port) +
+                (String.IsNullOrWhiteSpace(Name) ? "" : "　｜　" + Name);
+        }
     }
 
     public sealed class RemoteFileInfo
@@ -245,10 +335,17 @@ namespace AndroidADBTools
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private bool busy;
         private bool quickInstalling;
+        private bool quickTransferring;
+        private bool quickInstallDragOver;
+        private bool quickTransferDragOver;
+        private string quickTransferStatus = "";
 
         private Label adbStatusLabel;
         private Label deviceStatusLabel;
         private Label deviceDetailLabel;
+        private ComboBox deviceSelector;
+        private CheckBox installAllDevicesCheck;
+        private bool updatingDeviceSelector;
         private Button refreshButton;
         private Button browseAdbButton;
         private Button installGroupButton;
@@ -256,8 +353,6 @@ namespace AndroidADBTools
         private Button deleteGroupButton;
         private Button addGroupApksButton;
         private Button removeGroupApkButton;
-        private Button moveGroupUpButton;
-        private Button moveGroupDownButton;
         private ListBox groupList;
         private ListView apkList;
         private TextBox logBox;
@@ -265,6 +360,8 @@ namespace AndroidADBTools
         private Label groupTitle;
         private Label groupHint;
         private Panel dropPanel;
+        private Panel transferDropPanel;
+        private ComboBox quickTransferDestinationComboBox;
         private CheckBox autoBrightnessCheck;
         private CheckBox timeoutTenMinutesCheck;
         private CheckBox timeoutNeverCheck;
@@ -300,8 +397,28 @@ namespace AndroidADBTools
         private int brightnessLastApplied = -1;
         private int brightnessDetectedMaximum = 255;
         private bool? brightnessAutoMode;
+        private TextBox spotreadPathTextBox;
+        private TextBox spotreadCorrectionTextBox;
+        private NumericUpDown autoBrightnessTargetNumber;
+        private NumericUpDown autoBrightnessToleranceNumber;
+        private Button browseSpotreadButton;
+        private Button browseSpotreadCorrectionButton;
+        private Button testMeterButton;
+        private Button openWhitePatternButton;
+        private Button startAutoBrightnessButton;
+        private Label autoBrightnessStatusLabel;
+        private Label autoBrightnessReadingLabel;
+        private ProgressBar autoBrightnessProgressBar;
+        private bool autoBrightnessRunning;
+        private bool autoBrightnessCancelRequested;
         private ToolTip groupNameToolTip;
         private int lastGroupTooltipIndex = -1;
+        private ToolTip apkListToolTip;
+        private int lastApkTooltipIndex = -1;
+        private int groupDragStartIndex = -1;
+        private int groupDragInsertIndex = -1;
+        private int groupDragLastScrollTick;
+        private Point groupDragStartPoint;
         private ModernTabControl mainTabs;
         private TabPage brightnessTabPage;
         private readonly Dictionary<Control, DpiMetric> dpiMetrics = new Dictionary<Control, DpiMetric>();
@@ -340,6 +457,7 @@ namespace AndroidADBTools
             };
             Shown += async delegate
             {
+                await AutoReconnectWifiDevicesAsync(false);
                 await CheckConnectionAsync();
             };
             DpiChanged += delegate(object sender, DpiChangedEventArgs e)
@@ -422,34 +540,44 @@ namespace AndroidADBTools
                 Text = "尚未檢查手機",
                 ForeColor = TextColor,
                 Font = new Font(Font.FontFamily, 15F, FontStyle.Bold),
-                AutoSize = true,
-                Location = new Point(18, 46)
+                AutoSize = false,
+                AutoEllipsis = true,
+                Location = new Point(18, 46),
+                Height = 30
             };
             deviceDetailLabel = new Label
             {
                 Text = "請開啟 USB 偵錯並連接手機",
                 ForeColor = Muted,
-                AutoSize = true,
-                Location = new Point(20, 79)
+                AutoSize = false,
+                AutoEllipsis = true,
+                Location = new Point(20, 79),
+                Height = 25
             };
             deviceCard.Controls.Add(adbStatusLabel);
             deviceCard.Controls.Add(deviceStatusLabel);
             deviceCard.Controls.Add(deviceDetailLabel);
 
-            FlowLayoutPanel statusActions = new FlowLayoutPanel
+            Panel deviceControls = new Panel
             {
                 Dock = DockStyle.Right,
-                Width = 520,
+                Width = 700,
+                BackColor = Card
+            };
+            FlowLayoutPanel statusActions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 52,
                 FlowDirection = FlowDirection.RightToLeft,
                 WrapContents = false,
-                Padding = new Padding(0, 24, 0, 0),
+                Padding = new Padding(0, 5, 0, 0),
                 BackColor = Card
             };
             refreshButton = NewButton("重新檢查", true, 108);
             refreshButton.Click += async delegate { await CheckConnectionAsync(); };
             browseAdbButton = NewButton("選擇 adb.exe", false, 132);
             browseAdbButton.Click += BrowseAdb;
-            Button helpButton = NewButton("連線教學", false, 105);
+            Button helpButton = NewButton("Wi-Fi 連線", false, 112);
             helpButton.Click += ShowConnectionHelp;
             Button aboutButton = NewButton("關於", false, 78);
             aboutButton.Click += ShowAbout;
@@ -457,15 +585,72 @@ namespace AndroidADBTools
             statusActions.Controls.Add(browseAdbButton);
             statusActions.Controls.Add(helpButton);
             statusActions.Controls.Add(aboutButton);
-            deviceCard.Controls.Add(statusActions);
+
+            FlowLayoutPanel deviceSelectionRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+                FlowDirection = FlowDirection.RightToLeft,
+                WrapContents = false,
+                Padding = new Padding(0, 5, 0, 0),
+                BackColor = Card
+            };
+            installAllDevicesCheck = new CheckBox
+            {
+                Text = "APK 安裝到全部裝置",
+                ForeColor = Muted,
+                AutoSize = true,
+                Enabled = false,
+                Margin = new Padding(12, 7, 2, 0)
+            };
+            installAllDevicesCheck.CheckedChanged += DeviceInstallSelectionChanged;
+            deviceSelector = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Card2,
+                ForeColor = TextColor,
+                FlatStyle = FlatStyle.Flat,
+                Width = 350,
+                Enabled = false,
+                Margin = new Padding(8, 2, 0, 0)
+            };
+            deviceSelector.SelectedIndexChanged += DeviceSelectorChanged;
+            Label deviceSelectorLabel = new Label
+            {
+                Text = "操作裝置",
+                ForeColor = Muted,
+                AutoSize = true,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            deviceSelectionRow.Controls.Add(installAllDevicesCheck);
+            deviceSelectionRow.Controls.Add(deviceSelector);
+            deviceSelectionRow.Controls.Add(deviceSelectorLabel);
+            deviceControls.Controls.Add(deviceSelectionRow);
+            deviceControls.Controls.Add(statusActions);
+            deviceCard.Controls.Add(deviceControls);
+            deviceControls.BringToFront();
+            deviceCard.Resize += delegate
+            {
+                int width = Math.Max(ScaleValue(220, currentDpiScale),
+                    deviceCard.ClientSize.Width - deviceControls.Width - ScaleValue(44, currentDpiScale));
+                deviceStatusLabel.Width = width;
+                deviceDetailLabel.Width = width;
+            };
+            deviceControls.Resize += delegate
+            {
+                int width = Math.Max(ScaleValue(220, currentDpiScale),
+                    deviceCard.ClientSize.Width - deviceControls.Width - ScaleValue(44, currentDpiScale));
+                deviceStatusLabel.Width = width;
+                deviceDetailLabel.Width = width;
+            };
 
             mainTabs = new ModernTabControl();
             mainTabs.Dock = DockStyle.Fill;
             mainTabs.Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold);
             mainTabs.BackColor = Bg;
-            mainTabs.ItemSize = new Size(150, 46);
+            mainTabs.ItemSize = new Size(165, 46);
             TabPage groupsTab = NewTab("▦  常用 APK 安裝", Color.FromArgb(53, 120, 219));
-            TabPage singleTab = NewTab("⇩  快速安裝", Color.FromArgb(126, 87, 194));
+            TabPage singleTab = NewTab("⇩  快速安裝 / 傳輸", Color.FromArgb(126, 87, 194));
             TabPage brightnessTab = NewTab("☀  亮度調整", Color.FromArgb(211, 132, 42));
             brightnessTabPage = brightnessTab;
             TabPage quickSettingsTab = NewTab("⚙  快速設定", Color.FromArgb(32, 151, 116));
@@ -517,37 +702,28 @@ namespace AndroidADBTools
             TableLayoutPanel groupButtons = new TableLayoutPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 148,
+                Height = 98,
                 ColumnCount = 2,
-                RowCount = 3,
+                RowCount = 2,
                 BackColor = Card,
             };
             groupButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
             groupButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-            groupButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 33.34F));
-            groupButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33F));
-            groupButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 33.33F));
+            groupButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            groupButtons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
             Button addGroup = NewButton("＋ 新增", true, 90);
             renameGroupButton = NewButton("編輯名稱", false, 110);
             deleteGroupButton = NewButton("刪除組合", false, 95);
-            moveGroupUpButton = NewButton("↑ 上移", false, 95);
-            moveGroupDownButton = NewButton("↓ 下移", false, 95);
             addGroup.Dock = DockStyle.Fill;
             renameGroupButton.Dock = DockStyle.Fill;
             deleteGroupButton.Dock = DockStyle.Fill;
-            moveGroupUpButton.Dock = DockStyle.Fill;
-            moveGroupDownButton.Dock = DockStyle.Fill;
             addGroup.Click += AddGroup;
             renameGroupButton.Click += RenameGroup;
             deleteGroupButton.Click += DeleteGroup;
-            moveGroupUpButton.Click += delegate { MoveSelectedGroup(-1); };
-            moveGroupDownButton.Click += delegate { MoveSelectedGroup(1); };
             groupButtons.Controls.Add(addGroup, 0, 0);
             groupButtons.SetColumnSpan(addGroup, 2);
             groupButtons.Controls.Add(renameGroupButton, 0, 1);
             groupButtons.Controls.Add(deleteGroupButton, 1, 1);
-            groupButtons.Controls.Add(moveGroupUpButton, 0, 2);
-            groupButtons.Controls.Add(moveGroupDownButton, 1, 2);
             left.Controls.Add(groupButtons);
 
             groupList = new ListBox
@@ -560,18 +736,22 @@ namespace AndroidADBTools
                 IntegralHeight = false,
                 ItemHeight = 70,
                 DrawMode = DrawMode.OwnerDrawFixed,
-                HorizontalScrollbar = false
+                HorizontalScrollbar = false,
+                AllowDrop = true
             };
             groupList.HandleCreated += delegate { SetWindowTheme(groupList.Handle, "DarkMode_Explorer", null); };
             groupList.DrawItem += DrawGroupListItem;
             groupNameToolTip = new ToolTip { InitialDelay = 300, ReshowDelay = 100, AutoPopDelay = 8000, ShowAlways = true };
+            groupList.MouseDown += GroupListMouseDown;
+            groupList.MouseMove += GroupListDragMouseMove;
             groupList.MouseMove += GroupListMouseMove;
+            groupList.MouseUp += delegate { groupDragStartIndex = -1; };
             groupList.MouseLeave += delegate { lastGroupTooltipIndex = -1; groupNameToolTip.Hide(groupList); };
+            groupList.DragOver += GroupListDragOver;
+            groupList.DragDrop += GroupListDragDrop;
+            groupList.DragLeave += delegate { SetGroupDragInsertIndex(-1); };
             groupList.SelectedIndexChanged += delegate { ShowSelectedGroup(); };
-            groupList.DoubleClick += async delegate
-            {
-                if (groupList.SelectedItem != null) await InstallSelectedGroupAsync();
-            };
+            groupList.MouseDoubleClick += GroupListMouseDoubleClick;
             left.Controls.Add(groupList);
             groupList.BringToFront();
 
@@ -587,7 +767,7 @@ namespace AndroidADBTools
             groupTitle.AutoEllipsis = true;
             groupHint = new Label
             {
-                Text = "雙擊左側組合也可直接全部安裝",
+                Text = "拖曳左側組合可調整順序；雙擊自訂組合可編輯名稱",
                 ForeColor = Muted,
                 Dock = DockStyle.Top,
                 Height = 30
@@ -630,6 +810,13 @@ namespace AndroidADBTools
             apkList = NewApkList();
             apkList.Dock = DockStyle.Fill;
             apkList.AllowDrop = true;
+            apkListToolTip = new ToolTip { InitialDelay = 300, ReshowDelay = 100, AutoPopDelay = 12000, ShowAlways = true };
+            apkList.MouseMove += ApkListMouseMove;
+            apkList.MouseLeave += delegate
+            {
+                lastApkTooltipIndex = -1;
+                apkListToolTip.Hide(apkList);
+            };
             apkList.DragEnter += GroupApkDragEnter;
             apkList.DragDrop += GroupApkDragDrop;
             right.Controls.Add(apkList);
@@ -638,24 +825,87 @@ namespace AndroidADBTools
 
         private void BuildSingleTab(TabPage tab)
         {
+            TableLayoutPanel dropAreas = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                BackColor = Bg,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            dropAreas.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            dropAreas.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            dropAreas.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
             dropPanel = NewCard();
             dropPanel.Dock = DockStyle.Fill;
-            dropPanel.Margin = new Padding(8);
+            dropPanel.Margin = new Padding(0, 0, 6, 0);
             dropPanel.AllowDrop = true;
             dropPanel.Cursor = Cursors.Hand;
             dropPanel.DragEnter += ApkDragEnter;
+            dropPanel.DragLeave += ApkDragLeave;
             dropPanel.DragDrop += ApkDragDrop;
             dropPanel.Click += ChooseSingleApks;
             dropPanel.Paint += DrawQuickInstallDropPanel;
+
+            transferDropPanel = NewCard();
+            transferDropPanel.Dock = DockStyle.Fill;
+            transferDropPanel.Margin = new Padding(6, 0, 0, 0);
+            transferDropPanel.AllowDrop = true;
+            transferDropPanel.DragEnter += QuickTransferDragEnter;
+            transferDropPanel.DragLeave += QuickTransferDragLeave;
+            transferDropPanel.DragDrop += QuickTransferDragDrop;
+            transferDropPanel.Paint += DrawQuickTransferDropPanel;
+
+            Label transferDestinationLabel = new Label
+            {
+                Text = "手機目的地",
+                ForeColor = Muted,
+                AutoSize = true,
+                Location = new Point(38, 38)
+            };
+            quickTransferDestinationComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Card2,
+                ForeColor = TextColor,
+                FlatStyle = FlatStyle.Flat,
+                Width = 220,
+                Location = new Point(132, 31)
+            };
+            quickTransferDestinationComboBox.Items.AddRange(new object[]
+            {
+                "Download\\",
+                "DCIM\\",
+                "Pictures\\",
+                "\\（內部儲存根目錄）"
+            });
+            quickTransferDestinationComboBox.SelectedIndex = 0;
+            quickTransferDestinationComboBox.SelectedIndexChanged += delegate
+            {
+                if (transferDropPanel != null) transferDropPanel.Invalidate();
+            };
+            quickTransferDestinationComboBox.HandleCreated += delegate
+            {
+                SetWindowTheme(quickTransferDestinationComboBox.Handle, "DarkMode_Explorer", null);
+            };
+            transferDropPanel.Controls.Add(transferDestinationLabel);
+            transferDropPanel.Controls.Add(quickTransferDestinationComboBox);
+
             tab.Padding = new Padding(8);
-            tab.Controls.Add(dropPanel);
+            dropAreas.Controls.Add(dropPanel, 0, 0);
+            dropAreas.Controls.Add(transferDropPanel, 1, 0);
+            tab.Controls.Add(dropAreas);
         }
 
         private void DrawQuickInstallDropPanel(object sender, PaintEventArgs e)
         {
             Panel panel = (Panel)sender;
             Rectangle border = new Rectangle(20, 20, Math.Max(1, panel.ClientSize.Width - 41), Math.Max(1, panel.ClientSize.Height - 41));
-            using (Pen pen = new Pen(quickInstalling ? Color.FromArgb(255, 190, 75) : Accent, 2F))
+            Color borderColor = quickInstalling ? Color.FromArgb(255, 190, 75) :
+                (quickInstallDragOver ? Color.FromArgb(126, 87, 194) : Accent);
+            using (Pen pen = new Pen(borderColor, quickInstallDragOver ? 3F : 2F))
             {
                 pen.DashStyle = DashStyle.Dash;
                 e.Graphics.DrawRectangle(pen, border);
@@ -666,7 +916,7 @@ namespace AndroidADBTools
             using (Font titleFont = new Font(Font.FontFamily, 20F, FontStyle.Bold))
             using (Font hintFont = new Font(Font.FontFamily, 11F, FontStyle.Regular))
             {
-                DrawSmoothText(e.Graphics, quickInstalling ? "正在安裝 APK..." : "把一個或多個 APK 拖到這裡", titleFont,
+                DrawSmoothText(e.Graphics, quickInstalling ? "正在安裝 APK..." : "把 APK 拖到這裡安裝", titleFont,
                     quickInstalling ? Color.FromArgb(255, 190, 75) : TextColor, titleBounds, StringAlignment.Center, StringAlignment.Center, false);
                 DrawSmoothText(e.Graphics, quickInstalling ? "請勿拔除 USB，完成後會顯示安裝結果" : "放開後立即開始安裝\n也可按一下手動選擇 APK",
                     hintFont, Muted, hintBounds, StringAlignment.Center, StringAlignment.Near, false);
@@ -715,7 +965,7 @@ namespace AndroidADBTools
             };
             Label hint = new Label
             {
-                Text = "拖動滑桿、輸入數值，或使用鍵盤 − / + 與滑鼠滾輪；變更後會立即套用。",
+                Text = "上方保留手動調整；下方可搭配 ArgyllCMS 與外接色度計，依實測 nit 全自動校準。",
                 ForeColor = Muted,
                 Dock = DockStyle.Top,
                 Height = 32
@@ -736,7 +986,7 @@ namespace AndroidADBTools
             Panel controlCard = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 266,
+                Height = 228,
                 BackColor = Card2,
                 Padding = new Padding(14)
             };
@@ -750,9 +1000,9 @@ namespace AndroidADBTools
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top,
-                Height = 52
+                Height = 0,
+                Visible = false
             };
-            controlCard.Controls.Add(brightnessValueLabel);
 
             brightnessTrackBar = new TrackBar
             {
@@ -773,11 +1023,11 @@ namespace AndroidADBTools
             FlowLayoutPanel valueControls = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
-                Height = 48,
+                Height = 56,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
                 BackColor = Card2,
-                Padding = new Padding(0, 5, 0, 0)
+                Padding = new Padding(0, 12, 0, 0)
             };
             Button minusButton = NewButton("−", false, 58);
             minusButton.Font = new Font(Font.FontFamily, 16F, FontStyle.Bold);
@@ -839,11 +1089,12 @@ namespace AndroidADBTools
 
             FlowLayoutPanel actions = new FlowLayoutPanel
             {
-                Dock = DockStyle.Bottom,
+                Dock = DockStyle.Top,
                 Height = 48,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
-                BackColor = Card
+                BackColor = Card2,
+                Padding = new Padding(0, 4, 0, 0)
             };
             readBrightnessButton = NewButton("讀取目前亮度", false, 142);
             readBrightnessButton.Click += async delegate { await ReadBrightnessAsync(); };
@@ -856,7 +1107,13 @@ namespace AndroidADBTools
             };
             actions.Controls.Add(readBrightnessButton);
             actions.Controls.Add(applyBrightnessButton);
-            outer.Controls.Add(actions);
+            controlCard.Controls.Add(actions);
+            actions.BringToFront();
+
+            Panel autoCard = BuildAutoBrightnessCard();
+            brightnessViewport.Controls.Add(autoCard);
+            autoCard.BringToFront();
+            brightnessViewport.AutoScrollMinSize = new Size(0, controlCard.Height + autoCard.Height + 18);
 
             brightnessUpdateTimer = new Timer();
             brightnessUpdateTimer.Interval = 180;
@@ -865,6 +1122,174 @@ namespace AndroidADBTools
                 brightnessUpdateTimer.Stop();
                 await ApplyBrightnessAsync();
             };
+        }
+
+        private Panel BuildAutoBrightnessCard()
+        {
+            Panel card = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 388,
+                BackColor = Color.FromArgb(30, 38, 49),
+                Padding = new Padding(16),
+                Margin = new Padding(0, 12, 0, 0)
+            };
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 4,
+                RowCount = 8,
+                BackColor = card.BackColor,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            Label title = new Label
+            {
+                Text = "全自動調整亮度（實測 nit 閉迴路）",
+                ForeColor = TextColor,
+                Font = new Font(Font.FontFamily, 14F, FontStyle.Bold),
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            layout.Controls.Add(title, 0, 0);
+            layout.SetColumnSpan(title, 4);
+            Label note = new Label
+            {
+                Text = "將 Calibrite Display Plus HL 感測面貼平手機中央並顯示全白畫面。程式會反覆量測 cd/m²、調整 Android 亮度，直到接近目標值。HL 是否可用以 spotread 實際辨識結果為準。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                AutoEllipsis = true
+            };
+            layout.Controls.Add(note, 0, 1);
+            layout.SetColumnSpan(note, 4);
+
+            spotreadPathTextBox = BrightnessToolTextBox(settings.SpotreadPath);
+            browseSpotreadButton = NewButton("選擇 spotread.exe", false, 124);
+            browseSpotreadButton.Dock = DockStyle.Fill;
+            testMeterButton = NewButton("試量測", false, 112);
+            testMeterButton.Dock = DockStyle.Fill;
+            layout.Controls.Add(BrightnessToolLabel("ArgyllCMS spotread"), 0, 2);
+            layout.Controls.Add(spotreadPathTextBox, 1, 2);
+            layout.Controls.Add(browseSpotreadButton, 2, 2);
+            layout.Controls.Add(testMeterButton, 3, 2);
+
+            spotreadCorrectionTextBox = BrightnessToolTextBox(settings.SpotreadCorrectionPath);
+            browseSpotreadCorrectionButton = NewButton("選擇校正檔", false, 112);
+            browseSpotreadCorrectionButton.Dock = DockStyle.Fill;
+            Button clearCorrectionButton = NewButton("清除校正檔", false, 112);
+            clearCorrectionButton.Dock = DockStyle.Fill;
+            layout.Controls.Add(BrightnessToolLabel("選用 CCSS／CCMX"), 0, 3);
+            layout.Controls.Add(spotreadCorrectionTextBox, 1, 3);
+            layout.Controls.Add(browseSpotreadCorrectionButton, 2, 3);
+            layout.Controls.Add(clearCorrectionButton, 3, 3);
+
+            autoBrightnessTargetNumber = BrightnessNitNumber(10M, 10000M, settings.AutoBrightnessTargetNit, 0);
+            autoBrightnessToleranceNumber = BrightnessNitNumber(0.5M, 100M, settings.AutoBrightnessToleranceNit, 1);
+            FlowLayoutPanel targetRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = card.BackColor, Padding = new Padding(0, 4, 0, 0) };
+            targetRow.Controls.Add(autoBrightnessTargetNumber);
+            targetRow.Controls.Add(new Label { Text = "nit　　允許誤差", ForeColor = Muted, AutoSize = true, Padding = new Padding(6, 8, 0, 0) });
+            targetRow.Controls.Add(autoBrightnessToleranceNumber);
+            targetRow.Controls.Add(new Label { Text = "nit", ForeColor = Muted, AutoSize = true, Padding = new Padding(6, 8, 0, 0) });
+            layout.Controls.Add(BrightnessToolLabel("目標真實亮度"), 0, 4);
+            layout.Controls.Add(targetRow, 1, 4);
+            layout.SetColumnSpan(targetRow, 3);
+
+            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = card.BackColor, Padding = new Padding(0, 5, 0, 0) };
+            openWhitePatternButton = NewButton("手機開啟白色測試圖", false, 170);
+            startAutoBrightnessButton = NewButton("開始全自動調整", true, 155);
+            actions.Controls.Add(openWhitePatternButton);
+            actions.Controls.Add(startAutoBrightnessButton);
+            actions.Controls.Add(new Label { Text = "最多 18 次量測；每次調整後會等待畫面穩定。", ForeColor = Muted, AutoSize = true, Padding = new Padding(12, 10, 0, 0) });
+            layout.Controls.Add(actions, 0, 5);
+            layout.SetColumnSpan(actions, 4);
+
+            autoBrightnessProgressBar = new ProgressBar { Dock = DockStyle.Fill, Minimum = 0, Maximum = 18, Value = 0, Style = ProgressBarStyle.Continuous, Margin = new Padding(0, 7, 0, 7) };
+            layout.Controls.Add(autoBrightnessProgressBar, 0, 6);
+            layout.SetColumnSpan(autoBrightnessProgressBar, 4);
+            autoBrightnessReadingLabel = new Label { Text = "尚未量測", ForeColor = Muted, Dock = DockStyle.Top, Height = 24, AutoEllipsis = true };
+            autoBrightnessStatusLabel = new Label { Text = "請先選擇 ArgyllCMS bin 資料夾中的 spotread.exe，並按「試量測」確認儀器。", ForeColor = Muted, Dock = DockStyle.Fill, AutoEllipsis = true };
+            Panel statePanel = new Panel { Dock = DockStyle.Fill, BackColor = card.BackColor };
+            statePanel.Controls.Add(autoBrightnessStatusLabel);
+            statePanel.Controls.Add(autoBrightnessReadingLabel);
+            autoBrightnessReadingLabel.BringToFront();
+            autoBrightnessStatusLabel.Dock = DockStyle.Fill;
+            autoBrightnessStatusLabel.Padding = new Padding(0, 24, 0, 0);
+            layout.Controls.Add(statePanel, 0, 7);
+            layout.SetColumnSpan(statePanel, 4);
+            card.Controls.Add(layout);
+
+            browseSpotreadButton.Click += BrowseSpotread;
+            browseSpotreadCorrectionButton.Click += BrowseSpotreadCorrection;
+            clearCorrectionButton.Click += delegate
+            {
+                spotreadCorrectionTextBox.Text = "";
+                settings.SpotreadCorrectionPath = "";
+                SaveSettings();
+            };
+            spotreadPathTextBox.TextChanged += delegate { settings.SpotreadPath = spotreadPathTextBox.Text.Trim(); SaveSettings(); };
+            spotreadCorrectionTextBox.TextChanged += delegate { settings.SpotreadCorrectionPath = spotreadCorrectionTextBox.Text.Trim(); SaveSettings(); };
+            autoBrightnessTargetNumber.ValueChanged += delegate { settings.AutoBrightnessTargetNit = autoBrightnessTargetNumber.Value; SaveSettings(); };
+            autoBrightnessToleranceNumber.ValueChanged += delegate { settings.AutoBrightnessToleranceNit = autoBrightnessToleranceNumber.Value; SaveSettings(); };
+            testMeterButton.Click += async delegate { await TestBrightnessMeterAsync(); };
+            openWhitePatternButton.Click += async delegate { await OpenWhitePatternOnPhoneAsync(); };
+            startAutoBrightnessButton.Click += async delegate
+            {
+                if (autoBrightnessRunning)
+                {
+                    autoBrightnessCancelRequested = true;
+                    startAutoBrightnessButton.Text = "正在停止…";
+                    startAutoBrightnessButton.Enabled = false;
+                    return;
+                }
+                await RunAutomaticBrightnessAsync();
+            };
+            return card;
+        }
+
+        private TextBox BrightnessToolTextBox(string text)
+        {
+            TextBox box = new TextBox { Text = text ?? "", Dock = DockStyle.Fill, BackColor = Bg, ForeColor = TextColor, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 6, 8, 6) };
+            box.HandleCreated += delegate { SetWindowTheme(box.Handle, "DarkMode_Explorer", null); };
+            return box;
+        }
+
+        private Label BrightnessToolLabel(string text)
+        {
+            return new Label { Text = text, ForeColor = TextColor, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+        }
+
+        private NumericUpDown BrightnessNitNumber(decimal minimum, decimal maximum, decimal value, int decimals)
+        {
+            value = Math.Max(minimum, Math.Min(maximum, value));
+            NumericUpDown number = new NumericUpDown
+            {
+                Minimum = minimum,
+                Maximum = maximum,
+                Value = value,
+                DecimalPlaces = decimals,
+                Increment = decimals > 0 ? 0.5M : 10M,
+                Width = 105,
+                Height = 34,
+                TextAlign = HorizontalAlignment.Right,
+                BackColor = Bg,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            number.HandleCreated += delegate { SetWindowTheme(number.Handle, "DarkMode_Explorer", null); };
+            return number;
         }
 
         public bool PreFilterMessage(ref Message message)
@@ -888,13 +1313,9 @@ namespace AndroidADBTools
 
             if (message.Msg == WmMouseWheel)
             {
-                Rectangle pageBounds = brightnessTabPage.RectangleToScreen(brightnessTabPage.ClientRectangle);
-                if (!pageBounds.Contains(Control.MousePosition)) return false;
-                int delta = (short)((message.WParam.ToInt64() >> 16) & 0xFFFF);
-                if (delta == 0) return false;
-                int notches = Math.Max(1, Math.Abs(delta) / SystemInformation.MouseWheelScrollDelta);
-                ChangeBrightnessBy((delta > 0 ? 1 : -1) * BrightnessStep() * notches);
-                return true;
+                Control target = Control.FromHandle(message.HWnd);
+                for (Control current = target; current != null; current = current.Parent)
+                    if (current == brightnessTrackBar || current == brightnessNumber) return true;
             }
             return false;
         }
@@ -1299,7 +1720,7 @@ namespace AndroidADBTools
             Panel header = new Panel { Dock = DockStyle.Fill, BackColor = Card };
             Label title = new Label
             {
-                Text = "快速下載手機資料",
+                Text = "快速下載手機圖片影音資料",
                 ForeColor = TextColor,
                 Font = new Font(Font.FontFamily, 16F, FontStyle.Bold),
                 AutoSize = true,
@@ -1844,27 +2265,212 @@ namespace AndroidADBTools
             using (SolidBrush brush = new SolidBrush(fill)) e.Graphics.FillRectangle(brush, e.Bounds);
             if (selected)
             {
+                int accentInset = ScaleValue(6, currentDpiScale);
+                int accentWidth = Math.Max(3, ScaleValue(4, currentDpiScale));
                 using (SolidBrush accentBrush = new SolidBrush(Accent))
-                    e.Graphics.FillRectangle(accentBrush, e.Bounds.Left, e.Bounds.Top + 6, 4, e.Bounds.Height - 12);
+                    e.Graphics.FillRectangle(accentBrush, e.Bounds.Left, e.Bounds.Top + accentInset,
+                        accentWidth, Math.Max(1, e.Bounds.Height - accentInset * 2));
             }
             ApkGroup group = groupList.Items[e.Index] as ApkGroup;
             string name = group == null ? groupList.Items[e.Index].ToString() : group.Name;
             string count = group == null ? "" : (group.IsFolderGroup ? "資料夾同步　" : "") + group.Apks.Count + " 個 APK";
             int textLeft = e.Bounds.X + ScaleValue(14, currentDpiScale);
-            if (group != null && group.IsFolderGroup)
-            {
-                int iconSize = ScaleValue(19, currentDpiScale);
-                int iconTop = e.Bounds.Y + ScaleValue(15, currentDpiScale);
-                DrawFolderIcon(e.Graphics, new Rectangle(textLeft, iconTop, iconSize, iconSize));
-                textLeft += iconSize + ScaleValue(9, currentDpiScale);
-            }
-            Rectangle nameRect = new Rectangle(textLeft, e.Bounds.Y + 6, Math.Max(20, e.Bounds.Right - textLeft - 14), 40);
-            Rectangle countRect = new Rectangle(textLeft, e.Bounds.Y + 46, Math.Max(20, e.Bounds.Right - textLeft - 14), 18);
-            DrawSmoothText(e.Graphics, name, groupList.Font, selected ? Color.White : TextColor, nameRect,
-                StringAlignment.Near, StringAlignment.Near, false);
+            int horizontalPadding = ScaleValue(14, currentDpiScale);
+            int nameHeight = Math.Max(groupList.Font.Height + ScaleValue(4, currentDpiScale),
+                ScaleValue(24, currentDpiScale));
+            int countHeight;
+            int contentGap = ScaleValue(2, currentDpiScale);
             using (Font countFont = new Font(groupList.Font.FontFamily, 8.5F))
+            {
+                countHeight = Math.Max(countFont.Height + ScaleValue(2, currentDpiScale),
+                    ScaleValue(18, currentDpiScale));
+                int contentHeight = nameHeight + contentGap + countHeight;
+                int contentTop = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - contentHeight) / 2);
+
+                if (group != null && group.IsFolderGroup)
+                {
+                    int iconSize = ScaleValue(19, currentDpiScale);
+                    int iconTop = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - iconSize) / 2);
+                    DrawFolderIcon(e.Graphics, new Rectangle(textLeft, iconTop, iconSize, iconSize));
+                    textLeft += iconSize + ScaleValue(9, currentDpiScale);
+                }
+
+                Rectangle nameRect = new Rectangle(textLeft, contentTop,
+                    Math.Max(20, e.Bounds.Right - textLeft - horizontalPadding), nameHeight);
+                Rectangle countRect = new Rectangle(textLeft, contentTop + nameHeight + contentGap,
+                    Math.Max(20, e.Bounds.Right - textLeft - horizontalPadding), countHeight);
+                DrawSmoothText(e.Graphics, name, groupList.Font, selected ? Color.White : TextColor, nameRect,
+                    StringAlignment.Near, StringAlignment.Center, false);
                 DrawSmoothText(e.Graphics, count, countFont, selected ? Color.White : Muted, countRect,
                     StringAlignment.Near, StringAlignment.Center, true);
+            }
+
+            if (groupDragInsertIndex == e.Index ||
+                (groupDragInsertIndex == groupList.Items.Count && e.Index == groupList.Items.Count - 1))
+            {
+                int y = groupDragInsertIndex == groupList.Items.Count ? e.Bounds.Bottom - 2 : e.Bounds.Top + 1;
+                using (Pen pen = new Pen(Accent, Math.Max(2F, currentDpiScale * 2F)))
+                    e.Graphics.DrawLine(pen, e.Bounds.Left + 6, y, e.Bounds.Right - 6, y);
+            }
+        }
+
+        private void DrawQuickTransferDropPanel(object sender, PaintEventArgs e)
+        {
+            Panel panel = (Panel)sender;
+            Rectangle border = new Rectangle(20, 20, Math.Max(1, panel.ClientSize.Width - 41),
+                Math.Max(1, panel.ClientSize.Height - 41));
+            Color transferAccent = Color.FromArgb(35, 156, 181);
+            Color borderColor = quickTransferring ? Color.FromArgb(255, 190, 75) :
+                (quickTransferDragOver ? Color.FromArgb(65, 201, 138) : transferAccent);
+            using (Pen pen = new Pen(borderColor, quickTransferDragOver ? 3F : 2F))
+            {
+                pen.DashStyle = DashStyle.Dash;
+                e.Graphics.DrawRectangle(pen, border);
+            }
+            int centerY = panel.ClientSize.Height / 2;
+            Rectangle titleBounds = new Rectangle(40, centerY - 70,
+                Math.Max(1, panel.ClientSize.Width - 80), 64);
+            Rectangle hintBounds = new Rectangle(40, centerY + 4,
+                Math.Max(1, panel.ClientSize.Width - 80), 96);
+            using (Font titleFont = new Font(Font.FontFamily, 20F, FontStyle.Bold))
+            using (Font hintFont = new Font(Font.FontFamily, 11F, FontStyle.Regular))
+            {
+                DrawSmoothText(e.Graphics, quickTransferring ? "正在傳輸到手機..." : "把檔案或資料夾拖到這裡",
+                    titleFont, quickTransferring ? Color.FromArgb(255, 190, 75) : TextColor,
+                    titleBounds, StringAlignment.Center, StringAlignment.Center, false);
+                string hint = quickTransferring
+                    ? (String.IsNullOrWhiteSpace(quickTransferStatus) ? "請勿中斷手機連線" : quickTransferStatus)
+                    : "放開後立即傳輸到手機 " + QuickTransferDestinationLabel() +
+                        "\n資料夾名稱與完整子目錄結構都會保留";
+                DrawSmoothText(e.Graphics, hint, hintFont, Muted, hintBounds,
+                    StringAlignment.Center, StringAlignment.Near, false);
+            }
+        }
+
+        private void ApkListMouseMove(object sender, MouseEventArgs e)
+        {
+            ListView list = sender as ListView;
+            if (list == null || apkListToolTip == null) return;
+            ListViewItem item = list.GetItemAt(e.X, e.Y);
+            int index = item == null ? -1 : item.Index;
+            if (index == lastApkTooltipIndex) return;
+
+            lastApkTooltipIndex = index;
+            apkListToolTip.Hide(list);
+            if (item == null) return;
+
+            string path = item.Tag as string;
+            if (String.IsNullOrWhiteSpace(path)) return;
+            string fileName = Path.GetFileName(path);
+            string text = "完整檔名：" + fileName + Environment.NewLine +
+                "完整位置：" + path;
+            apkListToolTip.Show(text, list, e.X + ScaleValue(16, currentDpiScale),
+                e.Y + ScaleValue(20, currentDpiScale), 12000);
+        }
+
+        private void GroupListMouseDown(object sender, MouseEventArgs e)
+        {
+            groupDragStartIndex = -1;
+            if (busy || e.Button != MouseButtons.Left) return;
+            int index = groupList.IndexFromPoint(e.Location);
+            if (index < 0 || index >= groupList.Items.Count) return;
+            groupDragStartIndex = index;
+            groupDragStartPoint = e.Location;
+        }
+
+        private void GroupListMouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            if (busy || e.Button != MouseButtons.Left) return;
+            int index = groupList.IndexFromPoint(e.Location);
+            if (index < 0 || index >= groupList.Items.Count) return;
+            groupList.SelectedIndex = index;
+            ApkGroup group = SelectedGroup();
+            if (group != null && !group.IsFolderGroup) RenameGroup(groupList, EventArgs.Empty);
+        }
+
+        private void GroupListDragMouseMove(object sender, MouseEventArgs e)
+        {
+            if (busy || e.Button != MouseButtons.Left || groupDragStartIndex < 0 ||
+                groupDragStartIndex >= groupList.Items.Count) return;
+            Size dragSize = SystemInformation.DragSize;
+            Rectangle dragBounds = new Rectangle(groupDragStartPoint.X - dragSize.Width / 2,
+                groupDragStartPoint.Y - dragSize.Height / 2, dragSize.Width, dragSize.Height);
+            if (dragBounds.Contains(e.Location)) return;
+            ApkGroup group = groupList.Items[groupDragStartIndex] as ApkGroup;
+            groupDragStartIndex = -1;
+            if (group == null) return;
+            groupNameToolTip.Hide(groupList);
+            groupList.DoDragDrop(group, DragDropEffects.Move);
+        }
+
+        private void GroupListDragOver(object sender, DragEventArgs e)
+        {
+            e.Effect = DragDropEffects.None;
+            if (busy || !e.Data.GetDataPresent(typeof(ApkGroup)))
+            {
+                SetGroupDragInsertIndex(-1);
+                return;
+            }
+            e.Effect = DragDropEffects.Move;
+            Point location = groupList.PointToClient(new Point(e.X, e.Y));
+            AutoScrollGroupListDuringDrag(location);
+            SetGroupDragInsertIndex(GroupInsertIndexFromPoint(location));
+        }
+
+        private void AutoScrollGroupListDuringDrag(Point location)
+        {
+            int now = Environment.TickCount;
+            if (unchecked((uint)(now - groupDragLastScrollTick)) < 120U || groupList.Items.Count == 0) return;
+            int threshold = Math.Max(16, groupList.ItemHeight / 2);
+            int topIndex = groupList.TopIndex;
+            if (location.Y < threshold && topIndex > 0)
+                groupList.TopIndex = topIndex - 1;
+            else if (location.Y > groupList.ClientSize.Height - threshold)
+            {
+                int visibleCount = Math.Max(1, groupList.ClientSize.Height / Math.Max(1, groupList.ItemHeight));
+                int maximumTop = Math.Max(0, groupList.Items.Count - visibleCount);
+                if (topIndex < maximumTop) groupList.TopIndex = topIndex + 1;
+            }
+            else return;
+            groupDragLastScrollTick = now;
+        }
+
+        private int GroupInsertIndexFromPoint(Point location)
+        {
+            for (int i = 0; i < groupList.Items.Count; i++)
+            {
+                Rectangle bounds = groupList.GetItemRectangle(i);
+                if (location.Y < bounds.Top + bounds.Height / 2) return i;
+            }
+            return groupList.Items.Count;
+        }
+
+        private void SetGroupDragInsertIndex(int index)
+        {
+            if (groupDragInsertIndex == index) return;
+            groupDragInsertIndex = index;
+            groupList.Invalidate();
+        }
+
+        private void GroupListDragDrop(object sender, DragEventArgs e)
+        {
+            int insertIndex = groupDragInsertIndex;
+            SetGroupDragInsertIndex(-1);
+            if (busy || insertIndex < 0 || !e.Data.GetDataPresent(typeof(ApkGroup))) return;
+            ApkGroup selected = e.Data.GetData(typeof(ApkGroup)) as ApkGroup;
+            if (selected == null) return;
+            List<ApkGroup> groups = AllGroups();
+            int sourceIndex = groups.FindIndex(delegate(ApkGroup group) { return group.Id == selected.Id; });
+            if (sourceIndex < 0) return;
+            insertIndex = Math.Max(0, Math.Min(insertIndex, groups.Count));
+            ApkGroup moved = groups[sourceIndex];
+            groups.RemoveAt(sourceIndex);
+            if (insertIndex > sourceIndex) insertIndex--;
+            insertIndex = Math.Max(0, Math.Min(insertIndex, groups.Count));
+            groups.Insert(insertIndex, moved);
+            settings.GroupOrder = groups.Select(delegate(ApkGroup group) { return group.Id; }).ToList();
+            SaveSettings();
+            RefreshGroups(selected.Id);
         }
 
         private static void DrawFolderIcon(Graphics graphics, Rectangle bounds)
@@ -1913,6 +2519,9 @@ namespace AndroidADBTools
                     {
                         if (loaded.Groups == null) loaded.Groups = new List<ApkGroup>();
                         if (loaded.GroupOrder == null) loaded.GroupOrder = new List<string>();
+                        if (loaded.WifiDevices == null) loaded.WifiDevices = new List<WifiDeviceRecord>();
+                        if (loaded.AutoBrightnessTargetNit <= 0) loaded.AutoBrightnessTargetNit = 200M;
+                        if (loaded.AutoBrightnessToleranceNit <= 0) loaded.AutoBrightnessToleranceNit = 2M;
                         if (String.IsNullOrWhiteSpace(loaded.DownloadFolder))
                             loaded.DownloadFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Android手機資料下載");
                         if (loaded.MaxDownloadFileSizeGb <= 0) loaded.MaxDownloadFileSizeGb = 2M;
@@ -2071,6 +2680,7 @@ namespace AndroidADBTools
             busy = true;
             refreshButton.Enabled = false;
             devices.Clear();
+            RefreshDeviceSelector(new List<DeviceInfo>());
             string adb = FindAdb();
             if (String.IsNullOrWhiteSpace(adb))
             {
@@ -2098,6 +2708,7 @@ namespace AndroidADBTools
                 deviceStatusLabel.Text = "無法啟動 ADB";
                 deviceDetailLabel.Text = CleanOutput(result.Error);
                 Log("ADB 錯誤：" + CleanOutput(result.Error));
+                RefreshDeviceSelector(new List<DeviceInfo>());
             }
             else
             {
@@ -2129,19 +2740,100 @@ namespace AndroidADBTools
             return found;
         }
 
+        private void RefreshDeviceSelector(List<DeviceInfo> ready)
+        {
+            if (deviceSelector == null || installAllDevicesCheck == null) return;
+            ready = ready ?? new List<DeviceInfo>();
+            updatingDeviceSelector = true;
+            try
+            {
+                string rememberedSerial = settings.SelectedDeviceSerial ?? "";
+                deviceSelector.BeginUpdate();
+                deviceSelector.Items.Clear();
+                foreach (DeviceInfo device in ready) deviceSelector.Items.Add(device);
+                deviceSelector.EndUpdate();
+
+                int selectedIndex = ready.FindIndex(delegate(DeviceInfo device)
+                {
+                    return String.Equals(device.Serial, rememberedSerial, StringComparison.OrdinalIgnoreCase);
+                });
+                if (selectedIndex < 0 && ready.Count > 0) selectedIndex = 0;
+                deviceSelector.SelectedIndex = selectedIndex;
+                deviceSelector.Enabled = ready.Count > 1;
+                installAllDevicesCheck.Enabled = ready.Count > 1;
+                installAllDevicesCheck.Checked = ready.Count > 1 && settings.InstallToAllDevices;
+
+                if (selectedIndex >= 0 && !String.Equals(settings.SelectedDeviceSerial,
+                    ready[selectedIndex].Serial, StringComparison.OrdinalIgnoreCase))
+                {
+                    settings.SelectedDeviceSerial = ready[selectedIndex].Serial;
+                    SaveSettings();
+                }
+            }
+            finally
+            {
+                updatingDeviceSelector = false;
+            }
+        }
+
+        private void DeviceSelectorChanged(object sender, EventArgs e)
+        {
+            if (updatingDeviceSelector) return;
+            DeviceInfo selected = deviceSelector == null ? null : deviceSelector.SelectedItem as DeviceInfo;
+            if (selected == null) return;
+            settings.SelectedDeviceSerial = selected.Serial;
+            SaveSettings();
+            UpdateDeviceSelectionDetail();
+        }
+
+        private void DeviceInstallSelectionChanged(object sender, EventArgs e)
+        {
+            if (updatingDeviceSelector) return;
+            settings.InstallToAllDevices = installAllDevicesCheck != null && installAllDevicesCheck.Checked;
+            SaveSettings();
+            UpdateDeviceSelectionDetail();
+        }
+
+        private void UpdateDeviceSelectionDetail()
+        {
+            List<DeviceInfo> ready = ReadyDevices();
+            if (ready.Count == 0 || deviceDetailLabel == null) return;
+            DeviceInfo primary = ReadyDevice();
+            if (primary == null) return;
+            bool all = installAllDevicesCheck != null && installAllDevicesCheck.Enabled &&
+                installAllDevicesCheck.Checked;
+            deviceDetailLabel.Text = all
+                ? "APK 安裝目標：全部 " + ready.Count + " 台　｜　其他功能：" + primary
+                : "目前操作：" + primary;
+        }
+
         private void UpdateDeviceCard()
         {
             List<DeviceInfo> ready = devices.Where(delegate(DeviceInfo d) { return d.State == "device"; }).ToList();
             List<DeviceInfo> unauthorized = devices.Where(delegate(DeviceInfo d) { return d.State == "unauthorized"; }).ToList();
             List<DeviceInfo> offline = devices.Where(delegate(DeviceInfo d) { return d.State == "offline"; }).ToList();
+            RefreshDeviceSelector(ready);
             if (ready.Count > 0)
             {
-                DeviceInfo first = ready[0];
                 deviceStatusLabel.Text = ready.Count == 1 ? "手機已正確連線" : "已連線 " + ready.Count + " 台手機";
                 deviceStatusLabel.ForeColor = Green;
-                string name = String.IsNullOrWhiteSpace(first.Model) ? "Android 裝置" : first.Model;
-                deviceDetailLabel.Text = name + "　序號：" + first.Serial + (ready.Count > 1 ? "　（安裝時使用第一台）" : "");
-                Log("連線成功：" + name + " / " + first.Serial);
+                UpdateDeviceSelectionDetail();
+                bool wifiRecordChanged = false;
+                foreach (DeviceInfo device in ready)
+                {
+                    Log("連線成功：" + device);
+                    if (!device.IsWireless || settings.WifiDevices == null) continue;
+                    WifiDeviceRecord record = settings.WifiDevices.FirstOrDefault(delegate(WifiDeviceRecord item)
+                    {
+                        return String.Equals(item.DebugEndpoint, device.Serial, StringComparison.OrdinalIgnoreCase);
+                    });
+                    if (record != null && !String.Equals(record.DisplayName, device.DisplayName, StringComparison.Ordinal))
+                    {
+                        record.DisplayName = device.DisplayName;
+                        wifiRecordChanged = true;
+                    }
+                }
+                if (wifiRecordChanged) SaveSettings();
             }
             else if (unauthorized.Count > 0)
             {
@@ -2324,6 +3016,554 @@ namespace AndroidADBTools
         }
 
         private void ShowConnectionHelp(object sender, EventArgs e)
+        {
+            using (Form form = new Form())
+            {
+                float scale = Math.Max(1F, currentDpiScale);
+                Rectangle area = Screen.FromControl(this).WorkingArea;
+                form.Text = "ADB 連線與 Wi-Fi 配對";
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.BackColor = Bg;
+                form.ForeColor = TextColor;
+                form.Font = Font;
+                form.AutoScaleMode = AutoScaleMode.None;
+                form.MinimumSize = new Size(Math.Min(ScaleValue(920, scale), area.Width), Math.Min(ScaleValue(700, scale), area.Height));
+                form.Size = new Size(Math.Min(ScaleValue(1120, scale), area.Width - ScaleValue(24, scale)),
+                    Math.Min(ScaleValue(840, scale), area.Height - ScaleValue(24, scale)));
+                form.ShowIcon = false;
+
+                Panel header = new Panel { Dock = DockStyle.Top, Height = ScaleValue(82, scale), Padding = ScalePadding(new Padding(24, 14, 24, 6), scale) };
+                header.Controls.Add(new Label
+                {
+                    Text = "直接進行 ADB Wi-Fi 配對與連線",
+                    Dock = DockStyle.Top,
+                    Height = ScaleValue(36, scale),
+                    Font = new Font(Font.FontFamily, 17F, FontStyle.Bold),
+                    ForeColor = TextColor
+                });
+                header.Controls.Add(new Label
+                {
+                    Text = "Android 11 以上可使用六位數配對碼；手機與電腦必須位於可互通的同一區域網路。",
+                    Dock = DockStyle.Bottom,
+                    Height = ScaleValue(28, scale),
+                    ForeColor = Muted
+                });
+
+                ModernTabControl tabs = new ModernTabControl
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor = Bg,
+                    Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold),
+                    ItemSize = ScaleSize(new Size(250, 44), scale)
+                };
+                tabs.TabPages.Add(CreateWifiConnectionPage(form));
+                tabs.TabPages.Add(CreateConnectionHelpPage("USB 連線教學", Color.FromArgb(53, 120, 219), UsbConnectionHelpText()));
+
+                FlowLayoutPanel footer = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Bottom,
+                    Height = ScaleValue(58, scale),
+                    FlowDirection = FlowDirection.RightToLeft,
+                    Padding = ScalePadding(new Padding(10), scale),
+                    BackColor = Bg
+                };
+                Button close = NewButton("關閉", true, 110);
+                close.Size = ScaleSize(new Size(110, 36), scale);
+                close.MinimumSize = close.Size;
+                close.Click += delegate { form.Close(); };
+                footer.Controls.Add(close);
+
+                form.Controls.Add(tabs);
+                form.Controls.Add(footer);
+                form.Controls.Add(header);
+                tabs.BringToFront();
+                footer.BringToFront();
+                ApplySmoothTextRendering(form);
+                form.ShowDialog(this);
+            }
+        }
+
+        private TabPage CreateWifiConnectionPage(Form owner)
+        {
+            float scale = Math.Max(1F, currentDpiScale);
+            TabPage page = NewTab("Wi-Fi 配對與連線", Color.FromArgb(32, 151, 116));
+            page.Padding = ScalePadding(new Padding(12), scale);
+            Panel scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Card };
+            TableLayoutPanel root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = ScaleValue(650, scale),
+                BackColor = Card,
+                Padding = ScalePadding(new Padding(14), scale),
+                ColumnCount = 1,
+                RowCount = 4
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(72, scale)));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(178, scale)));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(170, scale)));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(180, scale)));
+
+            Label compatibility = new Label
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card2,
+                ForeColor = Muted,
+                Padding = new Padding(14, 10, 14, 8),
+                Text = "正在檢查 ADB 版本與無線偵錯相容性…",
+                AutoEllipsis = true
+            };
+            root.Controls.Add(compatibility, 0, 0);
+
+            TableLayoutPanel inputCard = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card2,
+                Padding = ScalePadding(new Padding(14, 10, 14, 10), scale),
+                ColumnCount = 4,
+                RowCount = 4,
+                Margin = ScalePadding(new Padding(0, 10, 0, 0), scale)
+            };
+            inputCard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42F));
+            inputCard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18F));
+            inputCard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
+            inputCard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18F));
+            inputCard.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(28, scale)));
+            inputCard.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(38, scale)));
+            inputCard.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(28, scale)));
+            inputCard.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(40, scale)));
+
+            TextBox host = WifiInput("例如 192.168.1.20");
+            NumericUpDown pairingPort = WifiPortInput();
+            TextBox pairingCode = WifiInput("六位數配對碼");
+            pairingCode.MaxLength = 6;
+            NumericUpDown debugPort = WifiPortInput();
+            Label actionState = new Label { Text = "請輸入手機無線偵錯畫面顯示的資料。", ForeColor = Muted, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+            Button pairButton = NewButton("開始配對", true, 112);
+            Button connectButton = NewButton("連線", true, 112);
+            pairButton.Dock = DockStyle.Fill;
+            connectButton.Dock = DockStyle.Fill;
+
+            inputCard.Controls.Add(WifiFieldLabel("手機 IP／主機名稱"), 0, 0);
+            inputCard.Controls.Add(WifiFieldLabel("配對 Port"), 1, 0);
+            inputCard.Controls.Add(WifiFieldLabel("六位數配對碼"), 2, 0);
+            inputCard.Controls.Add(new Label(), 3, 0);
+            inputCard.Controls.Add(host, 0, 1);
+            inputCard.Controls.Add(pairingPort, 1, 1);
+            inputCard.Controls.Add(pairingCode, 2, 1);
+            inputCard.Controls.Add(pairButton, 3, 1);
+            inputCard.Controls.Add(WifiFieldLabel("偵錯連線 Port（通常與配對 Port 不同）"), 0, 2);
+            inputCard.SetColumnSpan(inputCard.GetControlFromPosition(0, 2), 2);
+            inputCard.Controls.Add(actionState, 2, 2);
+            inputCard.SetColumnSpan(actionState, 2);
+            inputCard.Controls.Add(debugPort, 0, 3);
+            inputCard.Controls.Add(connectButton, 1, 3);
+            inputCard.SetColumnSpan(actionState, 2);
+            root.Controls.Add(inputCard, 0, 1);
+
+            TableLayoutPanel discovery = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = ScalePadding(new Padding(0, 10, 0, 0), scale) };
+            discovery.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            discovery.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            ListBox mdnsList = WifiListBox();
+            ListBox recordsList = WifiListBox();
+            Button scanButton;
+            Button removeButton;
+            Panel mdnsCard = WifiListCard("mDNS 區域網路搜尋", mdnsList, out scanButton, "開始搜尋");
+            Panel recordsCard = WifiListCard("已配對裝置紀錄", recordsList, out removeButton, "移除紀錄");
+            mdnsCard.Margin = ScalePadding(new Padding(0, 0, 5, 0), scale);
+            recordsCard.Margin = ScalePadding(new Padding(5, 0, 0, 0), scale);
+            discovery.Controls.Add(mdnsCard, 0, 0);
+            discovery.Controls.Add(recordsCard, 1, 0);
+            root.Controls.Add(discovery, 0, 2);
+
+            Panel noteCard = new Panel { Dock = DockStyle.Fill, BackColor = Card2, Padding = ScalePadding(new Padding(14, 10, 14, 10), scale), Margin = ScalePadding(new Padding(0, 10, 0, 0), scale) };
+            CheckBox autoReconnect = new CheckBox
+            {
+                Text = "程式啟動時自動重新連線已記錄的 Wi-Fi 裝置",
+                Checked = settings.WifiAutoReconnect,
+                ForeColor = TextColor,
+                AutoSize = true,
+                Location = new Point(ScaleValue(10, scale), ScaleValue(8, scale))
+            };
+            Label requirements = new Label
+            {
+                Text = "相容性：配對碼功能需要 Android 11 以上及 Android Platform Tools 30.0.0 以上。Android 10 以下沒有配對碼介面，需先用 USB 授權，再執行 adb tcpip 5555 與無線連線。部分廠牌會隱藏此功能；企業、訪客 Wi-Fi 或防火牆也可能阻擋 mDNS 與裝置互連。",
+                ForeColor = Muted,
+                AutoSize = false,
+                Dock = DockStyle.Bottom,
+                Height = ScaleValue(74, scale)
+            };
+            noteCard.Controls.Add(autoReconnect);
+            noteCard.Controls.Add(requirements);
+            root.Controls.Add(noteCard, 0, 3);
+            scroll.Controls.Add(root);
+            page.Controls.Add(scroll);
+
+            Action refreshRecords = delegate
+            {
+                recordsList.BeginUpdate();
+                recordsList.Items.Clear();
+                foreach (WifiDeviceRecord record in settings.WifiDevices) recordsList.Items.Add(record);
+                recordsList.EndUpdate();
+            };
+            Action refreshConnectButton = delegate
+            {
+                string endpoint;
+                if (TryBuildEndpoint(host.Text, Decimal.ToInt32(debugPort.Value), out endpoint) && IsWifiEndpointConnected(endpoint))
+                    connectButton.Text = "中斷";
+                else connectButton.Text = "連線";
+            };
+            refreshRecords();
+
+            autoReconnect.CheckedChanged += delegate { settings.WifiAutoReconnect = autoReconnect.Checked; SaveSettings(); };
+            pairButton.Click += async delegate
+            {
+                string endpoint;
+                string code = pairingCode.Text.Trim();
+                if (!TryBuildEndpoint(host.Text, Decimal.ToInt32(pairingPort.Value), out endpoint) || !Regex.IsMatch(code, "^[0-9]{6}$"))
+                {
+                    SetWifiActionState(actionState, "請確認手機 IP、配對 Port 與六位數配對碼。", false);
+                    return;
+                }
+                pairButton.Enabled = false;
+                SetWifiActionState(actionState, "正在配對，請保持手機配對碼畫面開啟…", null);
+                AdbResult result = await RunAdbAsync("pair " + Quote(endpoint) + " " + code);
+                string output = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                bool ok = AdbCommandSucceeded(result) && output.IndexOf("success", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (ok)
+                {
+                    UpsertWifiRecord(NormalizeWifiHost(host.Text), Decimal.ToInt32(pairingPort.Value), 0, null);
+                    refreshRecords();
+                    pairingCode.Clear();
+                    Log("Wi-Fi 配對成功：" + endpoint);
+                    SetWifiActionState(actionState, "配對成功；請再輸入無線偵錯主畫面的偵錯連線 Port。", true);
+                }
+                else
+                {
+                    Log("Wi-Fi 配對失敗：" + output);
+                    SetWifiActionState(actionState, "配對失敗：" + output, false);
+                }
+                pairButton.Enabled = true;
+            };
+            connectButton.Click += async delegate
+            {
+                string endpoint;
+                if (!TryBuildEndpoint(host.Text, Decimal.ToInt32(debugPort.Value), out endpoint))
+                {
+                    SetWifiActionState(actionState, "請輸入有效的手機 IP 與偵錯連線 Port。", false);
+                    return;
+                }
+                connectButton.Enabled = false;
+                bool disconnecting = IsWifiEndpointConnected(endpoint);
+                SetWifiActionState(actionState, disconnecting ? "正在中斷 Wi-Fi 裝置…" : "正在連線 Wi-Fi 裝置…", null);
+                AdbResult result = await RunAdbAsync((disconnecting ? "disconnect " : "connect ") + Quote(endpoint));
+                string output = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                bool ok = AdbCommandSucceeded(result) && output.IndexOf("failed", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    output.IndexOf("cannot", StringComparison.OrdinalIgnoreCase) < 0;
+                if (ok && !disconnecting)
+                {
+                    UpsertWifiRecord(NormalizeWifiHost(host.Text), Decimal.ToInt32(pairingPort.Value), Decimal.ToInt32(debugPort.Value), null);
+                    refreshRecords();
+                }
+                Log((disconnecting ? "Wi-Fi 中斷" : "Wi-Fi 連線") + (ok ? "成功：" : "失敗：") + endpoint + " / " + output);
+                SetWifiActionState(actionState, (disconnecting ? "中斷" : "連線") + (ok ? "成功" : "失敗") + "：" + output, ok);
+                await CheckConnectionAsync();
+                refreshConnectButton();
+                connectButton.Enabled = true;
+            };
+            scanButton.Click += async delegate
+            {
+                scanButton.Enabled = false;
+                mdnsList.Items.Clear();
+                SetWifiActionState(actionState, "正在透過 mDNS 搜尋區域網路裝置…", null);
+                AdbResult result = await RunAdbAsync("mdns services");
+                List<MdnsServiceInfo> found = ParseMdnsServices(result.Output);
+                foreach (MdnsServiceInfo service in found) mdnsList.Items.Add(service);
+                string detail = found.Count > 0 ? "找到 " + found.Count + " 個無線偵錯服務；雙擊即可帶入。" :
+                    "找不到服務。請確認手機已開啟無線偵錯，且網路允許 mDNS。";
+                SetWifiActionState(actionState, detail, found.Count > 0 ? (bool?)true : false);
+                scanButton.Enabled = true;
+            };
+            mdnsList.DoubleClick += delegate
+            {
+                MdnsServiceInfo service = mdnsList.SelectedItem as MdnsServiceInfo;
+                if (service == null) return;
+                host.Text = service.Host;
+                if (service.IsPairing) pairingPort.Value = service.Port;
+                else debugPort.Value = service.Port;
+                refreshConnectButton();
+            };
+            recordsList.DoubleClick += delegate
+            {
+                WifiDeviceRecord record = recordsList.SelectedItem as WifiDeviceRecord;
+                if (record == null) return;
+                host.Text = record.Host;
+                if (record.PairingPort > 0) pairingPort.Value = record.PairingPort;
+                if (record.DebugPort > 0) debugPort.Value = record.DebugPort;
+                refreshConnectButton();
+            };
+            removeButton.Click += delegate
+            {
+                WifiDeviceRecord record = recordsList.SelectedItem as WifiDeviceRecord;
+                if (record == null) return;
+                settings.WifiDevices.Remove(record);
+                SaveSettings();
+                refreshRecords();
+                SetWifiActionState(actionState, "已移除裝置紀錄；這不會撤銷手機端的配對授權。", true);
+            };
+            host.TextChanged += delegate { refreshConnectButton(); };
+            debugPort.ValueChanged += delegate { refreshConnectButton(); };
+            page.HandleCreated += async delegate { await CheckWifiCompatibilityAsync(compatibility); };
+            return page;
+        }
+
+        private TextBox WifiInput(string hint)
+        {
+            float scale = Math.Max(1F, currentDpiScale);
+            TextBox input = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Bg,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.FixedSingle,
+                Margin = ScalePadding(new Padding(0, 2, 10, 2), scale),
+                Tag = hint
+            };
+            input.HandleCreated += delegate { SetWindowTheme(input.Handle, "DarkMode_Explorer", null); };
+            return input;
+        }
+
+        private NumericUpDown WifiPortInput()
+        {
+            float scale = Math.Max(1F, currentDpiScale);
+            NumericUpDown input = new NumericUpDown
+            {
+                Dock = DockStyle.Fill,
+                Minimum = 0,
+                Maximum = 65535,
+                Value = 0,
+                BackColor = Bg,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.FixedSingle,
+                ThousandsSeparator = false,
+                Margin = ScalePadding(new Padding(0, 2, 10, 2), scale)
+            };
+            input.HandleCreated += delegate { SetWindowTheme(input.Handle, "DarkMode_Explorer", null); };
+            return input;
+        }
+
+        private Label WifiFieldLabel(string text)
+        {
+            return new Label { Text = text, ForeColor = Muted, Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft, AutoEllipsis = true };
+        }
+
+        private ListBox WifiListBox()
+        {
+            ListBox list = new ListBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card2,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.None,
+                IntegralHeight = false,
+                HorizontalScrollbar = true
+            };
+            list.HandleCreated += delegate { SetWindowTheme(list.Handle, "DarkMode_Explorer", null); };
+            return list;
+        }
+
+        private Panel WifiListCard(string title, ListBox list, out Button button, string buttonText)
+        {
+            float scale = Math.Max(1F, currentDpiScale);
+            Panel card = new Panel { Dock = DockStyle.Fill, BackColor = Card2, Padding = ScalePadding(new Padding(12, 8, 12, 10), scale) };
+            Label label = new Label { Text = title, Dock = DockStyle.Top, Height = ScaleValue(28, scale), ForeColor = TextColor, Font = new Font(Font, FontStyle.Bold) };
+            button = NewButton(buttonText, false, 108);
+            button.Dock = DockStyle.Right;
+            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = ScaleValue(38, scale), BackColor = Card2 };
+            bottom.Controls.Add(button);
+            card.Controls.Add(list);
+            card.Controls.Add(bottom);
+            card.Controls.Add(label);
+            list.BringToFront();
+            return card;
+        }
+
+        private static string UsbConnectionHelpText()
+        {
+            return "USB 連線步驟\r\n\r\n" +
+                "1. 手機進入「設定 > 關於手機」，連按 7 次版本號，開啟開發人員模式。\r\n\r\n" +
+                "2. 到「設定 > 系統 > 開發人員選項」，開啟「USB 偵錯」。\r\n\r\n" +
+                "3. 使用支援資料傳輸的 USB 線連接手機與電腦。\r\n\r\n" +
+                "4. 解鎖手機，在「允許 USB 偵錯嗎？」視窗按下允許。建議勾選「一律允許這部電腦」。\r\n\r\n" +
+                "5. 回到 Android ADB 快速工具，按下「重新檢查」。\r\n\r\n" +
+                "若仍找不到手機：\r\n• 確認 USB 模式不是僅充電。\r\n• 更換支援資料傳輸的 USB 線或 USB 連接埠。\r\n" +
+                "• 在開發人員選項撤銷 USB 偵錯授權，再重新連接。";
+        }
+
+        private async Task CheckWifiCompatibilityAsync(Label label)
+        {
+            string adb = FindAdb();
+            if (String.IsNullOrWhiteSpace(adb))
+            {
+                label.Text = "ADB 相容性：找不到 adb.exe，請先在主畫面指定 Android Platform Tools。";
+                label.ForeColor = Red;
+                return;
+            }
+            AdbResult version = await RunAdbAsync("version");
+            string versionText = CleanOutput((version.Output ?? "") + " " + (version.Error ?? ""));
+            Match match = Regex.Match(versionText, @"Version\s+(\d+)\.(\d+)\.(\d+)", RegexOptions.IgnoreCase);
+            int major = match.Success ? SafeInt(match.Groups[1].Value) : -1;
+            AdbResult mdns = await RunAdbAsync("mdns services");
+            bool pairCompatible = AdbCommandSucceeded(version) && major >= 30;
+            bool mdnsCompatible = AdbCommandSucceeded(mdns) &&
+                ((mdns.Error ?? "").IndexOf("unknown command", StringComparison.OrdinalIgnoreCase) < 0);
+            string detected = match.Success ? match.Value.Replace("Version", "Platform Tools") : "ADB 版本無法辨識";
+            label.Text = "ADB 相容性：" + detected + "　｜　配對碼：" + (pairCompatible ? "支援" : "需要 Platform Tools 30.0.0+") +
+                "　｜　mDNS 搜尋：" + (mdnsCompatible ? "可用" : "不可用或被網路阻擋") +
+                "\r\n手機需求：Android 11+ 才有系統內建六位數無線偵錯配對；Android 10 以下請使用 USB 授權＋TCP/IP 模式。";
+            label.ForeColor = pairCompatible ? Green : Color.FromArgb(255, 190, 75);
+        }
+
+        private static int SafeInt(string value)
+        {
+            int result;
+            return Int32.TryParse(value, out result) ? result : 0;
+        }
+
+        private void SetWifiActionState(Label label, string text, bool? success)
+        {
+            label.Text = text;
+            label.ForeColor = !success.HasValue ? Muted : success.Value ? Green : Red;
+        }
+
+        public static string FormatNetworkEndpoint(string host, int port)
+        {
+            host = NormalizeWifiHost(host);
+            if (host.IndexOf(':') >= 0 && !host.StartsWith("[", StringComparison.Ordinal)) host = "[" + host + "]";
+            return host + ":" + port;
+        }
+
+        private static string NormalizeWifiHost(string host)
+        {
+            host = (host ?? "").Trim();
+            if (host.StartsWith("[", StringComparison.Ordinal) && host.EndsWith("]", StringComparison.Ordinal) && host.Length > 2)
+                host = host.Substring(1, host.Length - 2);
+            return host;
+        }
+
+        private static bool TryBuildEndpoint(string hostText, int port, out string endpoint)
+        {
+            endpoint = "";
+            string host = NormalizeWifiHost(hostText);
+            if (port < 1 || port > 65535 || host.Length == 0 || host.Length > 255 ||
+                !Regex.IsMatch(host, "^[A-Za-z0-9.:%_-]+$")) return false;
+            endpoint = FormatNetworkEndpoint(host, port);
+            return true;
+        }
+
+        private bool IsWifiEndpointConnected(string endpoint)
+        {
+            return ReadyDevices().Any(delegate(DeviceInfo device)
+            {
+                return String.Equals(device.Serial, endpoint, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private WifiDeviceRecord UpsertWifiRecord(string host, int pairingPort, int debugPort, string displayName)
+        {
+            host = NormalizeWifiHost(host);
+            if (settings.WifiDevices == null) settings.WifiDevices = new List<WifiDeviceRecord>();
+            WifiDeviceRecord record = settings.WifiDevices.FirstOrDefault(delegate(WifiDeviceRecord item)
+            {
+                return String.Equals(NormalizeWifiHost(item.Host), host, StringComparison.OrdinalIgnoreCase);
+            });
+            if (record == null)
+            {
+                record = new WifiDeviceRecord { Host = host };
+                settings.WifiDevices.Add(record);
+            }
+            if (pairingPort > 0) record.PairingPort = pairingPort;
+            if (debugPort > 0)
+            {
+                record.DebugPort = debugPort;
+                record.LastConnected = DateTime.Now;
+            }
+            if (!String.IsNullOrWhiteSpace(displayName)) record.DisplayName = displayName;
+            SaveSettings();
+            return record;
+        }
+
+        private List<MdnsServiceInfo> ParseMdnsServices(string output)
+        {
+            List<MdnsServiceInfo> found = new List<MdnsServiceInfo>();
+            foreach (string raw in (output ?? "").Replace("\r", "").Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line.Length == 0 || line.StartsWith("List of", StringComparison.OrdinalIgnoreCase)) continue;
+                string[] parts = line.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2) continue;
+                string endpoint = parts[parts.Length - 1];
+                string host;
+                int port;
+                if (!TryParseNetworkEndpoint(endpoint, out host, out port)) continue;
+                string serviceType = parts.FirstOrDefault(delegate(string value) { return value.IndexOf("_adb-tls-", StringComparison.OrdinalIgnoreCase) >= 0; }) ?? "";
+                if (serviceType.Length == 0) continue;
+                found.Add(new MdnsServiceInfo { Name = parts[0], ServiceType = serviceType, Host = host, Port = port });
+            }
+            return found.GroupBy(delegate(MdnsServiceInfo item) { return item.ServiceType + "|" + item.Host + "|" + item.Port; }, StringComparer.OrdinalIgnoreCase)
+                .Select(delegate(IGrouping<string, MdnsServiceInfo> group) { return group.First(); }).ToList();
+        }
+
+        private static bool TryParseNetworkEndpoint(string endpoint, out string host, out int port)
+        {
+            host = "";
+            port = 0;
+            endpoint = (endpoint ?? "").Trim();
+            int separator;
+            if (endpoint.StartsWith("[", StringComparison.Ordinal))
+            {
+                int close = endpoint.IndexOf(']');
+                if (close < 1 || close + 2 >= endpoint.Length || endpoint[close + 1] != ':') return false;
+                host = endpoint.Substring(1, close - 1);
+                return Int32.TryParse(endpoint.Substring(close + 2), out port) && port > 0 && port <= 65535;
+            }
+            separator = endpoint.LastIndexOf(':');
+            if (separator <= 0 || separator == endpoint.Length - 1) return false;
+            host = endpoint.Substring(0, separator);
+            return Int32.TryParse(endpoint.Substring(separator + 1), out port) && port > 0 && port <= 65535;
+        }
+
+        private async Task AutoReconnectWifiDevicesAsync(bool showResult)
+        {
+            if (!settings.WifiAutoReconnect || settings.WifiDevices == null || settings.WifiDevices.Count == 0) return;
+            List<string> failed = new List<string>();
+            int connected = 0;
+            foreach (WifiDeviceRecord record in settings.WifiDevices.Where(delegate(WifiDeviceRecord item) { return item.DebugPort > 0; }).ToList())
+            {
+                string endpoint = record.DebugEndpoint;
+                AdbResult result = await RunAdbAsync("connect " + Quote(endpoint));
+                string detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                bool ok = AdbCommandSucceeded(result) && detail.IndexOf("failed", StringComparison.OrdinalIgnoreCase) < 0 &&
+                    detail.IndexOf("cannot", StringComparison.OrdinalIgnoreCase) < 0;
+                if (ok)
+                {
+                    record.LastConnected = DateTime.Now;
+                    connected++;
+                    Log("自動重新連線成功：" + endpoint);
+                }
+                else
+                {
+                    failed.Add(endpoint);
+                    Log("自動重新連線失敗：" + endpoint + " / " + detail);
+                }
+            }
+            SaveSettings();
+            if (showResult)
+                MessageBox.Show(this, "自動重新連線完成：成功 " + connected + "，失敗 " + failed.Count,
+                    "Wi-Fi 自動連線", MessageBoxButtons.OK, failed.Count == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        private void ShowConnectionHelpLegacy(object sender, EventArgs e)
         {
             const string usbHelp =
                 "USB 連線步驟\r\n\r\n" +
@@ -2560,6 +3800,8 @@ namespace AndroidADBTools
         private void ShowSelectedGroup()
         {
             ApkGroup group = SelectedGroup();
+            lastApkTooltipIndex = -1;
+            if (apkListToolTip != null) apkListToolTip.Hide(apkList);
             apkList.Items.Clear();
             if (group == null)
             {
@@ -2575,8 +3817,8 @@ namespace AndroidADBTools
             }
             groupTitle.Text = group.Name;
             groupHint.Text = group.IsFolderGroup
-                ? group.Apks.Count + " 個 APK　｜　來源：APKs\\" + group.Name + "　｜　點選時自動更新"
-                : group.Apks.Count + " 個 APK　｜　可拖放 APK 到右側清單　｜　雙擊左側組合可全部安裝";
+                ? group.Apks.Count + " 個 APK　｜　來源：APKs\\" + group.Name + "　｜　資料夾同步組合不可改名"
+                : group.Apks.Count + " 個 APK　｜　可拖放 APK 到右側清單　｜　雙擊左側組合可編輯名稱";
             foreach (ApkEntry entry in group.Apks)
             {
                 AddApkListItem(apkList, entry.Path, File.Exists(entry.Path) ? "等待安裝" : "檔案不存在");
@@ -2592,27 +3834,6 @@ namespace AndroidADBTools
             if (deleteGroupButton != null) deleteGroupButton.Enabled = editable;
             if (addGroupApksButton != null) addGroupApksButton.Enabled = editable;
             if (removeGroupApkButton != null) removeGroupApkButton.Enabled = editable;
-            List<ApkGroup> groups = AllGroups();
-            int index = group == null ? -1 : groups.FindIndex(delegate(ApkGroup item) { return item.Id == group.Id; });
-            if (moveGroupUpButton != null) moveGroupUpButton.Enabled = !busy && index > 0;
-            if (moveGroupDownButton != null) moveGroupDownButton.Enabled = !busy && index >= 0 && index < groups.Count - 1;
-        }
-
-        private void MoveSelectedGroup(int direction)
-        {
-            if (busy || direction == 0) return;
-            ApkGroup selected = SelectedGroup();
-            if (selected == null) return;
-            List<ApkGroup> groups = AllGroups();
-            int index = groups.FindIndex(delegate(ApkGroup group) { return group.Id == selected.Id; });
-            int target = index + direction;
-            if (index < 0 || target < 0 || target >= groups.Count) return;
-            ApkGroup moved = groups[index];
-            groups[index] = groups[target];
-            groups[target] = moved;
-            settings.GroupOrder = groups.Select(delegate(ApkGroup group) { return group.Id; }).ToList();
-            SaveSettings();
-            RefreshGroups(selected.Id);
         }
 
         private void AddGroup(object sender, EventArgs e)
@@ -2736,14 +3957,54 @@ namespace AndroidADBTools
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
                 e.Effect = files.Any(delegate(string f) { return File.Exists(f) && String.Equals(Path.GetExtension(f), ".apk", StringComparison.OrdinalIgnoreCase); }) ? DragDropEffects.Copy : DragDropEffects.None;
             }
+            quickInstallDragOver = e.Effect == DragDropEffects.Copy;
+            if (dropPanel != null) dropPanel.Invalidate();
+        }
+
+        private void ApkDragLeave(object sender, EventArgs e)
+        {
+            quickInstallDragOver = false;
+            if (dropPanel != null) dropPanel.Invalidate();
         }
 
         private async void ApkDragDrop(object sender, DragEventArgs e)
         {
+            quickInstallDragOver = false;
+            if (dropPanel != null) dropPanel.Invalidate();
             if (busy || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             string[] files = ((string[])e.Data.GetData(DataFormats.FileDrop))
                 .Where(delegate(string f) { return File.Exists(f) && String.Equals(Path.GetExtension(f), ".apk", StringComparison.OrdinalIgnoreCase); }).ToArray();
             await InstallQuickFilesAsync(files);
+        }
+
+        private void QuickTransferDragEnter(object sender, DragEventArgs e)
+        {
+            e.Effect = DragDropEffects.None;
+            if (!busy && e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                string[] paths = (string[])e.Data.GetData(DataFormats.FileDrop);
+                e.Effect = paths.Any(delegate(string path) { return File.Exists(path) || Directory.Exists(path); })
+                    ? DragDropEffects.Copy : DragDropEffects.None;
+            }
+            quickTransferDragOver = e.Effect == DragDropEffects.Copy;
+            if (transferDropPanel != null) transferDropPanel.Invalidate();
+        }
+
+        private void QuickTransferDragLeave(object sender, EventArgs e)
+        {
+            quickTransferDragOver = false;
+            if (transferDropPanel != null) transferDropPanel.Invalidate();
+        }
+
+        private async void QuickTransferDragDrop(object sender, DragEventArgs e)
+        {
+            quickTransferDragOver = false;
+            if (transferDropPanel != null) transferDropPanel.Invalidate();
+            if (busy || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            string[] paths = ((string[])e.Data.GetData(DataFormats.FileDrop))
+                .Where(delegate(string path) { return File.Exists(path) || Directory.Exists(path); })
+                .ToArray();
+            await TransferQuickItemsAsync(paths);
         }
 
         private async Task InstallQuickFilesAsync(IEnumerable<string> files)
@@ -2772,6 +4033,111 @@ namespace AndroidADBTools
             }
         }
 
+        private async Task TransferQuickItemsAsync(IEnumerable<string> paths)
+        {
+            if (busy) return;
+            HashSet<string> unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string path in paths ?? Enumerable.Empty<string>())
+            {
+                try
+                {
+                    string fullPath = Path.GetFullPath(path);
+                    if (File.Exists(fullPath) || Directory.Exists(fullPath)) unique.Add(fullPath);
+                }
+                catch (Exception ex)
+                {
+                    Log("略過無效的傳輸路徑：" + path + " / " + ex.Message);
+                }
+            }
+            if (unique.Count == 0) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+
+            string remoteDestination = QuickTransferRemoteDestination();
+            string destinationLabel = QuickTransferDestinationLabel();
+            busy = true;
+            quickTransferring = true;
+            quickTransferStatus = "正在準備手機 " + destinationLabel + "...";
+            SetInstallButtons(false);
+            if (transferDropPanel != null) transferDropPanel.Invalidate();
+            int success = 0;
+            int failed = 0;
+            try
+            {
+                Log("開始快速傳輸，共 " + unique.Count + " 個檔案或資料夾，目標：" + remoteDestination);
+                AdbResult prepare = await RunAdbAsync("-s " + Quote(device.Serial) +
+                    " shell mkdir -p " + Quote(remoteDestination));
+                if (!AdbCommandSucceeded(prepare))
+                {
+                    string detail = CleanOutput((prepare.Output ?? "") + " " + (prepare.Error ?? ""));
+                    Log("無法建立或存取手機目的地 " + remoteDestination + "：" + detail);
+                    MessageBox.Show(this, "無法存取手機目的地 " + destinationLabel + "。\n\n" + detail,
+                        "快速傳輸失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int index = 0;
+                foreach (string path in unique)
+                {
+                    index++;
+                    string name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar));
+                    if (String.IsNullOrWhiteSpace(name)) name = path;
+                    quickTransferStatus = "正在傳輸 " + index + " / " + unique.Count + "：" + name;
+                    if (transferDropPanel != null) transferDropPanel.Invalidate();
+                    Log("傳輸到手機 " + remoteDestination + "：" + path);
+                    AdbResult result = await RunAdbAsync("-s " + Quote(device.Serial) +
+                        " push " + Quote(path) + " " + Quote(remoteDestination));
+                    string detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                    if (result.Started && result.ExitCode == 0)
+                    {
+                        success++;
+                        Log("傳輸成功：" + name + (String.IsNullOrWhiteSpace(detail) ? "" : " / " + detail));
+                    }
+                    else
+                    {
+                        failed++;
+                        Log("傳輸失敗：" + name + " / " + detail);
+                    }
+                }
+
+                Log("快速傳輸完成：成功 " + success + "，失敗 " + failed + "。手機位置：" + remoteDestination);
+                MessageBox.Show(this,
+                    "快速傳輸完成\n\n成功：" + success + "\n失敗：" + failed +
+                    "\n\n手機位置：" + destinationLabel +
+                    (failed > 0 ? "\n\n可到「執行紀錄」查看失敗原因。" : ""),
+                    "快速傳輸", MessageBoxButtons.OK,
+                    failed == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                busy = false;
+                quickTransferring = false;
+                quickTransferStatus = "";
+                SetInstallButtons(true);
+                if (transferDropPanel != null) transferDropPanel.Invalidate();
+            }
+        }
+
+        private string QuickTransferRemoteDestination()
+        {
+            int selected = quickTransferDestinationComboBox == null ? 0 : quickTransferDestinationComboBox.SelectedIndex;
+            if (selected == 1) return "/sdcard/DCIM/";
+            if (selected == 2) return "/sdcard/Pictures/";
+            if (selected == 3) return "/sdcard/";
+            return "/sdcard/Download/";
+        }
+
+        private string QuickTransferDestinationLabel()
+        {
+            int selected = quickTransferDestinationComboBox == null ? 0 : quickTransferDestinationComboBox.SelectedIndex;
+            if (selected == 1) return "DCIM\\";
+            if (selected == 2) return "Pictures\\";
+            if (selected == 3) return "\\（內部儲存根目錄）";
+            return "Download\\";
+        }
+
         private ListViewItem AddApkListItem(ListView list, string path, string status)
         {
             ListViewItem item = new ListViewItem(Path.GetFileName(path));
@@ -2784,9 +4150,42 @@ namespace AndroidADBTools
             return item;
         }
 
+        private List<DeviceInfo> ReadyDevices()
+        {
+            return devices.Where(delegate(DeviceInfo device) { return device.State == "device"; }).ToList();
+        }
+
         private DeviceInfo ReadyDevice()
         {
-            return devices.FirstOrDefault(delegate(DeviceInfo d) { return d.State == "device"; });
+            List<DeviceInfo> ready = ReadyDevices();
+            if (ready.Count == 0) return null;
+            DeviceInfo selected = deviceSelector == null ? null : deviceSelector.SelectedItem as DeviceInfo;
+            if (selected != null)
+            {
+                DeviceInfo match = ready.FirstOrDefault(delegate(DeviceInfo device)
+                {
+                    return String.Equals(device.Serial, selected.Serial, StringComparison.OrdinalIgnoreCase);
+                });
+                if (match != null) return match;
+            }
+            if (!String.IsNullOrWhiteSpace(settings.SelectedDeviceSerial))
+            {
+                DeviceInfo remembered = ready.FirstOrDefault(delegate(DeviceInfo device)
+                {
+                    return String.Equals(device.Serial, settings.SelectedDeviceSerial, StringComparison.OrdinalIgnoreCase);
+                });
+                if (remembered != null) return remembered;
+            }
+            return ready[0];
+        }
+
+        private List<DeviceInfo> SelectedInstallDevices()
+        {
+            List<DeviceInfo> ready = ReadyDevices();
+            bool installAll = ready.Count > 1 && installAllDevicesCheck != null && installAllDevicesCheck.Checked;
+            if (installAll) return ready;
+            DeviceInfo primary = ReadyDevice();
+            return primary == null ? new List<DeviceInfo>() : new List<DeviceInfo> { primary };
         }
 
         private async Task<bool> EnsureReadyDeviceAsync()
@@ -2794,8 +4193,540 @@ namespace AndroidADBTools
             if (ReadyDevice() != null) return true;
             await CheckConnectionAsync();
             if (ReadyDevice() != null) return true;
-            MessageBox.Show(this, "目前沒有可安裝的 Android 手機。\n請先完成 USB 偵錯授權並重新檢查。", "手機未連線", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, "目前沒有可操作的 Android 手機。\n請先完成 USB 偵錯授權並重新檢查。", "手機未連線", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
+        }
+
+        private void BrowseSpotread(object sender, EventArgs e)
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "選擇 ArgyllCMS spotread.exe";
+                dialog.Filter = "ArgyllCMS spotread (spotread.exe)|spotread.exe|執行檔 (*.exe)|*.exe";
+                string current = FindSpotread();
+                if (!String.IsNullOrWhiteSpace(current)) dialog.InitialDirectory = Path.GetDirectoryName(current);
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                settings.SpotreadPath = dialog.FileName;
+                spotreadPathTextBox.Text = dialog.FileName;
+                SaveSettings();
+                autoBrightnessStatusLabel.Text = "已指定 spotread.exe；請連接色度計並按「試量測」。";
+                autoBrightnessStatusLabel.ForeColor = Muted;
+            }
+        }
+
+        private void BrowseSpotreadCorrection(object sender, EventArgs e)
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "選擇 ArgyllCMS 顯示器校正檔";
+                dialog.Filter = "Argyll 校正檔 (*.ccss;*.ccmx)|*.ccss;*.ccmx|所有檔案 (*.*)|*.*";
+                if (!String.IsNullOrWhiteSpace(settings.SpotreadCorrectionPath) && File.Exists(settings.SpotreadCorrectionPath))
+                    dialog.InitialDirectory = Path.GetDirectoryName(settings.SpotreadCorrectionPath);
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                settings.SpotreadCorrectionPath = dialog.FileName;
+                spotreadCorrectionTextBox.Text = dialog.FileName;
+                SaveSettings();
+            }
+        }
+
+        private string FindSpotread()
+        {
+            List<string> candidates = new List<string>();
+            if (spotreadPathTextBox != null && !String.IsNullOrWhiteSpace(spotreadPathTextBox.Text)) candidates.Add(spotreadPathTextBox.Text.Trim());
+            if (!String.IsNullOrWhiteSpace(settings.SpotreadPath)) candidates.Add(settings.SpotreadPath);
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            candidates.Add(Path.Combine(baseDir, "spotread.exe"));
+            candidates.Add(Path.Combine(baseDir, "ArgyllCMS", "bin", "spotread.exe"));
+            candidates.Add(Path.Combine(baseDir, "Argyll", "bin", "spotread.exe"));
+            foreach (string candidate in candidates)
+            {
+                try { if (!String.IsNullOrWhiteSpace(candidate) && File.Exists(candidate)) return Path.GetFullPath(candidate); }
+                catch { }
+            }
+            foreach (string folder in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+            {
+                try
+                {
+                    string candidate = Path.Combine(folder.Trim(), "spotread.exe");
+                    if (File.Exists(candidate)) return candidate;
+                }
+                catch { }
+            }
+            return "";
+        }
+
+        private string SpotreadArguments()
+        {
+            string arguments = "-e -O";
+            string correction = spotreadCorrectionTextBox == null ? settings.SpotreadCorrectionPath : spotreadCorrectionTextBox.Text.Trim();
+            if (!String.IsNullOrWhiteSpace(correction)) arguments += " -X " + Quote(correction);
+            return arguments;
+        }
+
+        private async Task<AdbResult> RunSpotreadAsync()
+        {
+            string executable = FindSpotread();
+            if (String.IsNullOrWhiteSpace(executable))
+                return new AdbResult { Started = false, ExitCode = -1, Error = "找不到 spotread.exe，請先指定 ArgyllCMS bin 資料夾中的檔案。" };
+            string correction = spotreadCorrectionTextBox == null ? settings.SpotreadCorrectionPath : spotreadCorrectionTextBox.Text.Trim();
+            if (!String.IsNullOrWhiteSpace(correction) && !File.Exists(correction))
+                return new AdbResult { Started = false, ExitCode = -1, Error = "指定的 CCSS／CCMX 校正檔不存在。" };
+            string arguments = SpotreadArguments();
+            return await Task.Run(delegate
+            {
+                AdbResult result = new AdbResult();
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo
+                    {
+                        FileName = executable,
+                        Arguments = arguments,
+                        WorkingDirectory = Path.GetDirectoryName(executable),
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        StandardOutputEncoding = Encoding.UTF8,
+                        StandardErrorEncoding = Encoding.UTF8
+                    };
+                    using (Process process = Process.Start(psi))
+                    {
+                        result.Started = true;
+                        StringBuilder standardOutput = new StringBuilder();
+                        StringBuilder standardError = new StringBuilder();
+                        object outputLock = new object();
+                        process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
+                        {
+                            if (e.Data == null) return;
+                            lock (outputLock) standardOutput.AppendLine(e.Data);
+                        };
+                        process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+                        {
+                            if (e.Data == null) return;
+                            lock (outputLock) standardError.AppendLine(e.Data);
+                        };
+                        process.BeginOutputReadLine();
+                        process.BeginErrorReadLine();
+                        bool exited = false;
+                        bool fatalInstrumentState = false;
+                        DateTime deadline = DateTime.UtcNow.AddSeconds(60);
+                        while (!(exited = process.WaitForExit(150)) && DateTime.UtcNow < deadline)
+                        {
+                            string liveOutput;
+                            lock (outputLock) liveOutput = standardOutput.ToString() + "\n" + standardError.ToString();
+                            if (liveOutput.IndexOf("sensor being in the wrong position", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                liveOutput.IndexOf("Ambient filter should be removed", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                fatalInstrumentState = true;
+                                try { process.Kill(); } catch { }
+                                process.WaitForExit(5000);
+                                exited = true;
+                                break;
+                            }
+                        }
+                        if (!exited)
+                        {
+                            try { process.Kill(); } catch { }
+                            process.WaitForExit(5000);
+                            result.ExitCode = -2;
+                            result.Error = "spotread 量測逾時（60 秒）。請確認儀器已連接、感測器放在螢幕上，且沒有其他程式占用儀器。";
+                        }
+                        else
+                        {
+                            process.WaitForExit();
+                            result.ExitCode = fatalInstrumentState ? -3 : process.ExitCode;
+                        }
+                        lock (outputLock)
+                        {
+                            result.Output = standardOutput.ToString();
+                            string stderr = standardError.ToString();
+                            if (!String.IsNullOrWhiteSpace(stderr))
+                                result.Error = String.IsNullOrWhiteSpace(result.Error) ? stderr : result.Error + " " + stderr;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Started = false;
+                    result.ExitCode = -1;
+                    result.Error = ex.Message;
+                }
+                return result;
+            });
+        }
+
+        private async Task<Tuple<bool, double, string>> MeasureDisplayNitAsync()
+        {
+            AdbResult result = await RunSpotreadAsync();
+            string combined = ((result.Output ?? "") + "\n" + (result.Error ?? "")).Trim();
+            double nit = 0;
+            bool parsed = result.Started && result.ExitCode == 0 && TryParseSpotreadNit(combined, out nit);
+            if (parsed && nit >= 0) return Tuple.Create(true, nit, CleanOutput(combined));
+            string detail = CleanOutput(combined);
+            if (String.IsNullOrWhiteSpace(detail)) detail = "spotread 沒有回傳可辨識的 XYZ／Yxy 亮度結果。";
+            return Tuple.Create(false, 0.0, ExplainSpotreadFailure(detail));
+        }
+
+        private static string ExplainSpotreadFailure(string detail)
+        {
+            string text = detail ?? "";
+            if (text.IndexOf("sensor being in the wrong position", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("Ambient filter should be removed", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "色度計目前位於環境光量測位置。請將白色環境光擴散蓋完全旋離感測鏡頭，確認鏡頭面貼平螢幕後再試。原始訊息：" + text;
+            if (text.IndexOf("err 32", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("sharing violation", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                string blockers = DetectKnownSpotreadBlockers();
+                return "Windows 拒絕 spotread 開啟色度計（錯誤 32）。這不一定是校色軟體；Logitech／Alienware 等 RGB 動態燈光服務也可能獨占 HID 裝置。" +
+                    (String.IsNullOrWhiteSpace(blockers) ? "" : " 目前偵測到可能的占用者：" + blockers + "。") +
+                    "請先停止列出的常駐服務，再拔插色度計後重試。原始訊息：" + text;
+            }
+            if (text.IndexOf("Failed to initialise communications", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("Communications failure", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "spotread 找到色度計，但無法建立通訊。請關閉其他校色軟體、拔插 USB，並確認 ArgyllCMS 驅動與儀器相容。原始訊息：" + text;
+            if (text.IndexOf("No instrument", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                text.IndexOf("instrument access failed", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "spotread 找不到可用的色度計。請確認 USB 連線、驅動，以及儀器未被其他程式占用。原始訊息：" + text;
+            return text;
+        }
+
+        private static string DetectKnownSpotreadBlockers()
+        {
+            string[,] known =
+            {
+                { "logi_lamparray_service", "Logitech LampArray Service" },
+                { "AlienFXSubAgent", "Alienware AlienFX" },
+                { "AWCCService", "Alienware Command Center" },
+                { "LightingService", "ASUS Aura Lighting Service" },
+                { "ArmouryCrate.Service", "ASUS Armoury Crate" },
+                { "iCUE", "Corsair iCUE" },
+                { "Razer Synapse Service", "Razer Synapse" },
+                { "SignalRgb", "SignalRGB" },
+                { "OpenRGB", "OpenRGB" }
+            };
+            List<string> running = new List<string>();
+            for (int i = 0; i < known.GetLength(0); i++)
+            {
+                try
+                {
+                    Process[] processes = Process.GetProcessesByName(known[i, 0]);
+                    if (processes.Length > 0) running.Add(known[i, 1] + "（" + known[i, 0] + ".exe）");
+                    foreach (Process process in processes) process.Dispose();
+                }
+                catch { }
+            }
+            return String.Join("、", running.Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+
+        private static bool TryParseSpotreadNit(string output, out double nit)
+        {
+            nit = 0;
+            string number = @"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?)";
+            Match match = Regex.Match(output ?? "", @"(?:Result\s+is\s+)?XYZ\s*:\s*" + number + @"[\s,]+" + number + @"[\s,]+" + number, RegexOptions.IgnoreCase);
+            if (match.Success && TryParseInvariantDouble(match.Groups[2].Value, out nit)) return true;
+            match = Regex.Match(output ?? "", @"Yxy\s*:\s*" + number, RegexOptions.IgnoreCase);
+            if (match.Success && TryParseInvariantDouble(match.Groups[1].Value, out nit)) return true;
+            match = Regex.Match(output ?? "", @"(?:^|\s)Y\s*=\s*" + number, RegexOptions.IgnoreCase);
+            if (match.Success && TryParseInvariantDouble(match.Groups[1].Value, out nit)) return true;
+            match = Regex.Match(output ?? "", number + @"\s*(?:cd\s*/\s*m(?:\^?2|²)|nit(?:s)?)", RegexOptions.IgnoreCase);
+            return match.Success && TryParseInvariantDouble(match.Groups[1].Value, out nit);
+        }
+
+        private static bool TryParseInvariantDouble(string text, out double value)
+        {
+            return Double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) ||
+                Double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value);
+        }
+
+        private async Task TestBrightnessMeterAsync()
+        {
+            if (autoBrightnessRunning)
+            {
+                autoBrightnessStatusLabel.Text = "全自動調整正在執行，無法同時試量測。";
+                autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
+                return;
+            }
+            if (busy)
+            {
+                autoBrightnessStatusLabel.Text = "程式正在執行其他操作，請等操作完成後再試量測。";
+                autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
+                return;
+            }
+            string spotread = FindSpotread();
+            if (String.IsNullOrWhiteSpace(spotread))
+            {
+                autoBrightnessStatusLabel.Text = "找不到 spotread.exe，請先按「選擇 spotread.exe」。";
+                autoBrightnessStatusLabel.ForeColor = Red;
+                return;
+            }
+            settings.SpotreadPath = spotread;
+            spotreadPathTextBox.Text = spotread;
+            SaveSettings();
+            testMeterButton.Enabled = false;
+            testMeterButton.Text = "量測中…";
+            autoBrightnessStatusLabel.Text = "正在呼叫 spotread 試量測；請將感測器貼在發光畫面上…";
+            autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
+            autoBrightnessProgressBar.Style = ProgressBarStyle.Marquee;
+            autoBrightnessProgressBar.MarqueeAnimationSpeed = 24;
+            try
+            {
+                Tuple<bool, double, string> measured = await MeasureDisplayNitAsync();
+                if (measured.Item1)
+                {
+                    autoBrightnessReadingLabel.Text = "儀器實測：" + measured.Item2.ToString("0.0", CultureInfo.CurrentCulture) + " nit";
+                    autoBrightnessReadingLabel.ForeColor = Green;
+                    autoBrightnessStatusLabel.Text = "spotread 已成功辨識並讀取儀器，可開始全自動調整。";
+                    autoBrightnessStatusLabel.ForeColor = Green;
+                    Log("色度計試量測成功：" + measured.Item2.ToString("0.000", CultureInfo.InvariantCulture) + " nit");
+                }
+                else
+                {
+                    autoBrightnessReadingLabel.Text = "試量測失敗";
+                    autoBrightnessReadingLabel.ForeColor = Red;
+                    autoBrightnessStatusLabel.Text = "無法取得亮度：" + ShortStatus(measured.Item3, 260);
+                    autoBrightnessStatusLabel.ForeColor = Red;
+                    Log("色度計試量測失敗：" + measured.Item3);
+                    MessageBox.Show(this, measured.Item3, "色度計試量測失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                autoBrightnessReadingLabel.Text = "試量測失敗";
+                autoBrightnessReadingLabel.ForeColor = Red;
+                autoBrightnessStatusLabel.Text = "試量測發生錯誤：" + ShortStatus(ex.Message, 260);
+                autoBrightnessStatusLabel.ForeColor = Red;
+                Log("色度計試量測發生錯誤：" + ex.Message);
+                MessageBox.Show(this, ex.Message, "色度計試量測錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                autoBrightnessProgressBar.Style = ProgressBarStyle.Continuous;
+                autoBrightnessProgressBar.MarqueeAnimationSpeed = 0;
+                autoBrightnessProgressBar.Value = 0;
+                testMeterButton.Text = "試量測";
+                testMeterButton.Enabled = true;
+            }
+        }
+
+        private async Task OpenWhitePatternOnPhoneAsync()
+        {
+            if (busy || autoBrightnessRunning) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            bool ok = await OpenWhitePatternOnPhoneAsync(device, true);
+            if (ok)
+            {
+                autoBrightnessStatusLabel.Text = "白色測試圖已送到手機；請切換成全螢幕並將感測器貼在中央白色區域。";
+                autoBrightnessStatusLabel.ForeColor = Green;
+            }
+        }
+
+        private async Task<bool> OpenWhitePatternOnPhoneAsync(DeviceInfo device, bool showFailure)
+        {
+            string tempFile = Path.Combine(Path.GetTempPath(), "AndroidADBTools-white-pattern.png");
+            const string remoteFile = "/sdcard/Download/AndroidADBTools-white-pattern.png";
+            try
+            {
+                using (Bitmap bitmap = new Bitmap(1080, 1920))
+                using (Graphics graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(Color.White);
+                    bitmap.Save(tempFile, System.Drawing.Imaging.ImageFormat.Png);
+                }
+                string serial = "-s " + Quote(device.Serial) + " ";
+                AdbResult push = await RunAdbAsync(serial + "push " + Quote(tempFile) + " " + Quote(remoteFile));
+                if (!AdbCommandSucceeded(push)) throw new InvalidOperationException(CleanOutput((push.Output ?? "") + " " + (push.Error ?? "")));
+                AdbResult open = await RunAdbAsync(serial + "shell am start -a android.intent.action.VIEW -t image/png -d " + Quote("file://" + remoteFile));
+                if (!AdbCommandSucceeded(open)) throw new InvalidOperationException(CleanOutput((open.Output ?? "") + " " + (open.Error ?? "")));
+                Log("已在手機開啟全白亮度量測圖。某些圖片檢視器仍需手動切換全螢幕。");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("無法開啟白色測試圖：" + ex.Message);
+                if (showFailure) MessageBox.Show(this, "無法自動在手機開啟白色測試圖。\n\n請手動在手機顯示全白畫面後再量測。\n\n" + ex.Message,
+                    "白色測試圖", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+            finally
+            {
+                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+            }
+        }
+
+        private async Task RunAutomaticBrightnessAsync()
+        {
+            if (autoBrightnessRunning || busy) return;
+            string spotread = FindSpotread();
+            if (String.IsNullOrWhiteSpace(spotread))
+            {
+                MessageBox.Show(this, "請先指定 ArgyllCMS bin 資料夾中的 spotread.exe。", "缺少 ArgyllCMS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            string prefix = "-s " + Quote(device.Serial) + " shell ";
+            AdbResult currentResult = await RunAdbAsync(prefix + "settings get system screen_brightness");
+            int current;
+            if (!AdbCommandSucceeded(currentResult) || !Int32.TryParse(FirstOutputLine(currentResult.Output), out current))
+            {
+                MessageBox.Show(this, "無法讀取手機目前亮度，不能開始自動調整。", "亮度讀取失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            Tuple<int, bool, string> maximumInfo = await DetectBrightnessMaximumAsync(prefix, current);
+            SetBrightnessMaximum(maximumInfo.Item1);
+            double target = (double)autoBrightnessTargetNumber.Value;
+            double tolerance = (double)autoBrightnessToleranceNumber.Value;
+            settings.SpotreadPath = spotread;
+            settings.AutoBrightnessTargetNit = autoBrightnessTargetNumber.Value;
+            settings.AutoBrightnessToleranceNit = autoBrightnessToleranceNumber.Value;
+            SaveSettings();
+
+            autoBrightnessRunning = true;
+            autoBrightnessCancelRequested = false;
+            busy = true;
+            brightnessApplying = true;
+            brightnessUpdateTimer.Stop();
+            SetInstallButtons(false);
+            SetAutoBrightnessUi(false);
+            startAutoBrightnessButton.Enabled = true;
+            startAutoBrightnessButton.Text = "取消自動調整";
+            autoBrightnessProgressBar.Value = 0;
+            autoBrightnessStatusLabel.Text = "正在準備白色測試畫面與手動亮度模式…";
+            autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
+            bool converged = false;
+            bool measurementFailed = false;
+            int bestValue = Math.Max(1, Math.Min(brightnessDetectedMaximum, current));
+            double bestNit = Double.NaN;
+            double bestError = Double.MaxValue;
+            int iteration = 0;
+            try
+            {
+                await OpenWhitePatternOnPhoneAsync(device, false);
+                AdbResult mode = await RunAdbAsync(prefix + "settings put system screen_brightness_mode 0");
+                if (!AdbCommandSucceeded(mode)) throw new InvalidOperationException("無法關閉手機自動亮度：" + CleanOutput((mode.Output ?? "") + " " + (mode.Error ?? "")));
+                brightnessAutoMode = false;
+                await Task.Delay(1800);
+
+                int low = 1;
+                int high = brightnessDetectedMaximum;
+                int candidate = bestValue;
+                for (iteration = 1; iteration <= 18 && low <= high; iteration++)
+                {
+                    if (autoBrightnessCancelRequested) break;
+                    autoBrightnessProgressBar.Value = Math.Min(iteration, autoBrightnessProgressBar.Maximum);
+                    autoBrightnessStatusLabel.Text = "第 " + iteration + " / 18 次：套用 Android 亮度 " + candidate + "，等待畫面穩定…";
+                    AdbResult applied = await RunAdbAsync(prefix + "settings put system screen_brightness " + candidate);
+                    if (!AdbCommandSucceeded(applied)) throw new InvalidOperationException("套用亮度 " + candidate + " 失敗：" + CleanOutput((applied.Output ?? "") + " " + (applied.Error ?? "")));
+                    SetBrightnessControls(candidate, false);
+                    brightnessLastApplied = candidate;
+                    await Task.Delay(1400);
+                    if (autoBrightnessCancelRequested) break;
+                    autoBrightnessStatusLabel.Text = "第 " + iteration + " / 18 次：色度計量測中…";
+                    Tuple<bool, double, string> measured = await MeasureDisplayNitAsync();
+                    if (!measured.Item1)
+                    {
+                        measurementFailed = true;
+                        throw new InvalidOperationException("spotread 無法取得亮度：" + measured.Item3);
+                    }
+                    double actual = measured.Item2;
+                    double error = Math.Abs(actual - target);
+                    autoBrightnessReadingLabel.Text = "第 " + iteration + " 次實測：" + actual.ToString("0.0", CultureInfo.CurrentCulture) +
+                        " nit　｜　目標 " + target.ToString("0.0", CultureInfo.CurrentCulture) + " nit　｜　誤差 " + error.ToString("0.0", CultureInfo.CurrentCulture);
+                    autoBrightnessReadingLabel.ForeColor = error <= tolerance ? Green : Color.FromArgb(255, 190, 75);
+                    Log("自動亮度量測：Android=" + candidate + "，實測=" + actual.ToString("0.000", CultureInfo.InvariantCulture) +
+                        " nit，目標=" + target.ToString("0.000", CultureInfo.InvariantCulture) + " nit");
+                    if (error < bestError)
+                    {
+                        bestError = error;
+                        bestNit = actual;
+                        bestValue = candidate;
+                    }
+                    if (error <= tolerance)
+                    {
+                        converged = true;
+                        break;
+                    }
+                    if (actual < target) low = candidate + 1;
+                    else high = candidate - 1;
+                    if (low > high) break;
+                    candidate = low + (high - low) / 2;
+                }
+
+                if (!Double.IsNaN(bestNit))
+                {
+                    AdbResult finalApply = await RunAdbAsync(prefix + "settings put system screen_brightness " + bestValue);
+                    if (!AdbCommandSucceeded(finalApply)) throw new InvalidOperationException("無法套用最佳亮度值 " + bestValue + "。 ");
+                    SetBrightnessControls(bestValue, false);
+                    brightnessLastApplied = bestValue;
+                }
+                if (autoBrightnessCancelRequested)
+                {
+                    autoBrightnessStatusLabel.Text = Double.IsNaN(bestNit) ? "已取消，未取得有效量測。" :
+                        "已取消；保留目前最佳結果 " + bestNit.ToString("0.0", CultureInfo.CurrentCulture) + " nit（Android 亮度 " + bestValue + "）。";
+                    autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
+                    Log("使用者取消全自動亮度調整。");
+                }
+                else if (converged)
+                {
+                    autoBrightnessStatusLabel.Text = "校準完成：" + bestNit.ToString("0.0", CultureInfo.CurrentCulture) + " nit，Android 亮度 " + bestValue +
+                        "，誤差 " + bestError.ToString("0.0", CultureInfo.CurrentCulture) + " nit。";
+                    autoBrightnessStatusLabel.ForeColor = Green;
+                    brightnessStatusLabel.Text = "全自動校準：Android 亮度 " + bestValue + "，實測 " + bestNit.ToString("0.0", CultureInfo.CurrentCulture) + " nit";
+                    brightnessStatusLabel.ForeColor = Green;
+                    Log("全自動亮度校準完成：" + bestNit.ToString("0.000", CultureInfo.InvariantCulture) + " nit，Android=" + bestValue);
+                    MessageBox.Show(this, autoBrightnessStatusLabel.Text, "全自動亮度校準完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    autoBrightnessStatusLabel.Text = Double.IsNaN(bestNit) ? "無法取得有效量測。" :
+                        "已完成搜尋，但設備無法在允許誤差內達到目標；最接近 " + bestNit.ToString("0.0", CultureInfo.CurrentCulture) +
+                        " nit（Android 亮度 " + bestValue + "，誤差 " + bestError.ToString("0.0", CultureInfo.CurrentCulture) + " nit）。";
+                    autoBrightnessStatusLabel.ForeColor = Red;
+                    MessageBox.Show(this, autoBrightnessStatusLabel.Text + "\n\n可能原因：目標超出手機可達範圍、HDR／高亮度模式未啟用、畫面不是全白，或量測值有波動。",
+                        "未能達到目標亮度", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                autoBrightnessStatusLabel.Text = "全自動調整失敗：" + ShortStatus(ex.Message, 300);
+                autoBrightnessStatusLabel.ForeColor = Red;
+                Log("全自動亮度調整失敗：" + ex.Message);
+                MessageBox.Show(this, ex.Message + (measurementFailed ? "\n\n請先用「試量測」確認 ArgyllCMS 能辨識儀器。" : ""),
+                    "全自動亮度調整失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                busy = false;
+                brightnessApplying = false;
+                autoBrightnessRunning = false;
+                autoBrightnessCancelRequested = false;
+                SetInstallButtons(true);
+                SetAutoBrightnessUi(true);
+                startAutoBrightnessButton.Text = "開始全自動調整";
+                startAutoBrightnessButton.Enabled = true;
+            }
+        }
+
+        private void SetAutoBrightnessUi(bool enabled)
+        {
+            if (spotreadPathTextBox != null) spotreadPathTextBox.Enabled = enabled;
+            if (spotreadCorrectionTextBox != null) spotreadCorrectionTextBox.Enabled = enabled;
+            if (browseSpotreadButton != null) browseSpotreadButton.Enabled = enabled;
+            if (browseSpotreadCorrectionButton != null) browseSpotreadCorrectionButton.Enabled = enabled;
+            if (testMeterButton != null) testMeterButton.Enabled = enabled;
+            if (openWhitePatternButton != null) openWhitePatternButton.Enabled = enabled;
+            if (autoBrightnessTargetNumber != null) autoBrightnessTargetNumber.Enabled = enabled;
+            if (autoBrightnessToleranceNumber != null) autoBrightnessToleranceNumber.Enabled = enabled;
+        }
+
+        private static string ShortStatus(string text, int maximum)
+        {
+            text = CleanOutput(text);
+            return text.Length <= maximum ? text : text.Substring(0, maximum) + "…";
         }
 
         private async Task ReadBrightnessAsync()
@@ -3625,49 +5556,111 @@ namespace AndroidADBTools
 
         private async Task InstallJobsAsync(List<Tuple<string, ListViewItem>> jobs, string title)
         {
-            DeviceInfo device = ReadyDevice();
-            if (device == null) return;
+            List<DeviceInfo> targetDevices = SelectedInstallDevices();
+            if (targetDevices.Count == 0) return;
             busy = true;
             SetInstallButtons(false);
-            int success = 0;
-            int failed = 0;
-            Log("開始安裝 " + title + "，共 " + jobs.Count + " 個 APK。");
-            foreach (Tuple<string, ListViewItem> job in jobs)
+            int totalSuccess = 0;
+            int totalFailed = 0;
+            Dictionary<string, int> successByPath = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> lastFailureByPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            StringBuilder report = new StringBuilder();
+            try
             {
-                string path = job.Item1;
-                ListViewItem item = job.Item2;
-                if (!File.Exists(path))
+                Log("開始安裝 " + title + "，共 " + jobs.Count + " 個 APK，目標 " + targetDevices.Count + " 台裝置。");
+                foreach (DeviceInfo device in targetDevices)
                 {
-                    SetItemStatus(item, "失敗：檔案不存在", Red);
-                    failed++;
-                    Log("略過不存在的檔案：" + path);
-                    continue;
+                    int deviceSuccess = 0;
+                    int deviceFailed = 0;
+                    List<string> deviceFailedNames = new List<string>();
+                    string deviceLabel = device.DisplayName + "｜" + device.Serial + "｜" + device.ConnectionLabel;
+                    Log("APK 安裝裝置：" + deviceLabel);
+                    foreach (Tuple<string, ListViewItem> job in jobs)
+                    {
+                        string path = job.Item1 ?? "";
+                        ListViewItem item = job.Item2;
+                        int currentSuccess;
+                        if (!successByPath.TryGetValue(path, out currentSuccess)) successByPath[path] = 0;
+                        if (!File.Exists(path))
+                        {
+                            string reason = "檔案不存在";
+                            lastFailureByPath[path] = reason;
+                            deviceFailed++;
+                            totalFailed++;
+                            deviceFailedNames.Add(Path.GetFileName(path));
+                            Log("[" + deviceLabel + "] 略過不存在的檔案：" + path);
+                            continue;
+                        }
+
+                        SetItemStatus(item, targetDevices.Count == 1 ? "安裝中..." :
+                            "正在安裝到 " + device.DisplayName + "...", Color.FromArgb(255, 190, 75));
+                        Log("[" + deviceLabel + "] 安裝：" + Path.GetFileName(path));
+                        string flags = "-r" + (settings.AllowDowngrade ? " -d" : "");
+                        string args = "-s " + Quote(device.Serial) + " install " + flags + " " + Quote(path);
+                        AdbResult result = await RunAdbAsync(args);
+                        string combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
+                        bool ok = result.Started && result.ExitCode == 0 &&
+                            combined.IndexOf("Success", StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (ok)
+                        {
+                            successByPath[path] = successByPath[path] + 1;
+                            deviceSuccess++;
+                            totalSuccess++;
+                            Log("[" + deviceLabel + "] 安裝成功：" + Path.GetFileName(path));
+                        }
+                        else
+                        {
+                            string reason = FriendlyInstallError(combined);
+                            lastFailureByPath[path] = reason;
+                            deviceFailed++;
+                            totalFailed++;
+                            deviceFailedNames.Add(Path.GetFileName(path));
+                            Log("[" + deviceLabel + "] 安裝失敗：" + Path.GetFileName(path) + " / " + CleanOutput(combined));
+                        }
+                    }
+
+                    report.AppendLine(device.DisplayName + "　｜　" + device.Serial + "　｜　" + device.ConnectionLabel);
+                    report.AppendLine("成功：" + deviceSuccess + "　失敗：" + deviceFailed);
+                    if (deviceFailedNames.Count > 0)
+                    {
+                        string failedText = String.Join("、", deviceFailedNames.Take(4).ToArray());
+                        if (deviceFailedNames.Count > 4) failedText += " 等 " + deviceFailedNames.Count + " 項";
+                        report.AppendLine("失敗項目：" + failedText);
+                    }
+                    report.AppendLine();
                 }
-                SetItemStatus(item, "安裝中...", Color.FromArgb(255, 190, 75));
-                Log("安裝：" + Path.GetFileName(path));
-                string flags = "-r" + (settings.AllowDowngrade ? " -d" : "");
-                string args = "-s " + Quote(device.Serial) + " install " + flags + " " + Quote(path);
-                AdbResult result = await RunAdbAsync(args);
-                string combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
-                bool ok = result.Started && result.ExitCode == 0 && combined.IndexOf("Success", StringComparison.OrdinalIgnoreCase) >= 0;
-                if (ok)
+
+                foreach (Tuple<string, ListViewItem> job in jobs)
                 {
-                    SetItemStatus(item, "成功（ADB 已確認）", Green);
-                    success++;
-                    Log("安裝成功：" + Path.GetFileName(path));
-                }
-                else
-                {
-                    string reason = FriendlyInstallError(combined);
-                    SetItemStatus(item, "失敗：" + reason, Red);
-                    failed++;
-                    Log("安裝失敗：" + Path.GetFileName(path) + " / " + CleanOutput(combined));
+                    if (job.Item2 == null) continue;
+                    int installedCount;
+                    if (!successByPath.TryGetValue(job.Item1, out installedCount)) installedCount = 0;
+                    if (!File.Exists(job.Item1))
+                        SetItemStatus(job.Item2, "失敗：檔案不存在", Red);
+                    else if (targetDevices.Count == 1 && installedCount == 1)
+                        SetItemStatus(job.Item2, "成功（ADB 已確認）", Green);
+                    else if (targetDevices.Count == 1)
+                    {
+                        string reason;
+                        if (!lastFailureByPath.TryGetValue(job.Item1, out reason)) reason = "ADB 未回報成功";
+                        SetItemStatus(job.Item2, "失敗：" + reason, Red);
+                    }
+                    else if (installedCount == targetDevices.Count)
+                        SetItemStatus(job.Item2, installedCount + "/" + targetDevices.Count + " 台成功", Green);
+                    else
+                        SetItemStatus(job.Item2, installedCount + "/" + targetDevices.Count + " 台成功，" +
+                            (targetDevices.Count - installedCount) + " 台失敗", Red);
                 }
             }
-            busy = false;
-            SetInstallButtons(true);
-            Log("安裝完成：成功 " + success + "，失敗 " + failed + "。");
-            MessageBox.Show(this, "安裝完成\n\n成功：" + success + "\n失敗：" + failed + (failed > 0 ? "\n\n可到「執行紀錄」查看詳細原因。" : ""), title, MessageBoxButtons.OK, failed == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+            }
+            Log("安裝完成：裝置 " + targetDevices.Count + " 台，成功 " + totalSuccess + "，失敗 " + totalFailed + "。");
+            MessageBox.Show(this, "安裝完成\n\n" + report.ToString().TrimEnd() +
+                (totalFailed > 0 ? "\n\n可到「執行紀錄」查看各裝置詳細原因。" : ""),
+                title, MessageBoxButtons.OK, totalFailed == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
 
         private void SetInstallButtons(bool enabled)
@@ -3675,12 +5668,21 @@ namespace AndroidADBTools
             installGroupButton.Enabled = enabled;
             refreshButton.Enabled = enabled;
             browseAdbButton.Enabled = enabled;
+            if (deviceSelector != null) deviceSelector.Enabled = enabled && ReadyDevices().Count > 1;
+            if (installAllDevicesCheck != null) installAllDevicesCheck.Enabled = enabled && ReadyDevices().Count > 1;
             if (dropPanel != null)
             {
                 dropPanel.Enabled = enabled;
                 dropPanel.Cursor = enabled ? Cursors.Hand : Cursors.WaitCursor;
                 dropPanel.Invalidate();
             }
+            if (transferDropPanel != null)
+            {
+                transferDropPanel.Enabled = enabled;
+                transferDropPanel.Cursor = enabled ? Cursors.Default : Cursors.WaitCursor;
+                transferDropPanel.Invalidate();
+            }
+            if (quickTransferDestinationComboBox != null) quickTransferDestinationComboBox.Enabled = enabled;
             if (applyQuickSettingsButton != null) applyQuickSettingsButton.Enabled = enabled;
             if (readQuickSettingsButton != null) readQuickSettingsButton.Enabled = enabled;
             if (volumeMinimumButton != null) volumeMinimumButton.Enabled = enabled;
@@ -3734,27 +5736,105 @@ namespace AndroidADBTools
         {
             using (Form form = new Form())
             {
+                float scale = Math.Max(1F, currentDpiScale);
+                Rectangle workArea = Screen.FromControl(this).WorkingArea;
+                int outerMargin = ScaleValue(24, scale);
+                int desiredWidth = ScaleValue(560, scale);
+                int desiredHeight = ScaleValue(300, scale);
+                bool renaming = String.Equals(title, "重新命名", StringComparison.Ordinal);
+
                 form.Text = title;
                 form.StartPosition = FormStartPosition.CenterParent;
                 form.FormBorderStyle = FormBorderStyle.FixedDialog;
                 form.MaximizeBox = false;
                 form.MinimizeBox = false;
-                form.ClientSize = new Size(420, 150);
-                form.BackColor = Card;
+                form.ShowIcon = false;
+                form.ShowInTaskbar = false;
+                form.AutoScaleMode = AutoScaleMode.None;
+                form.ClientSize = new Size(Math.Min(desiredWidth, workArea.Width - outerMargin * 2),
+                    Math.Min(desiredHeight, workArea.Height - outerMargin * 2));
+                form.BackColor = Bg;
                 form.ForeColor = TextColor;
                 form.Font = Font;
-                Label prompt = new Label { Text = label, AutoSize = true, Location = new Point(18, 18) };
-                TextBox input = new TextBox { Text = value, Location = new Point(18, 46), Width = 382, BackColor = Card2, ForeColor = TextColor, BorderStyle = BorderStyle.FixedSingle };
-                Button ok = NewButton("確定", true, 86);
-                ok.Location = new Point(218, 96);
+                form.Padding = ScalePadding(new Padding(30, 24, 30, 22), scale);
+
+                TableLayoutPanel layout = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor = Bg,
+                    ColumnCount = 1,
+                    RowCount = 6,
+                    Margin = new Padding(0),
+                    Padding = new Padding(0)
+                };
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(38, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(30, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(46, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(52, scale)));
+
+                Label heading = new Label
+                {
+                    Text = renaming ? "重新命名安裝組合" : "建立新的安裝組合",
+                    ForeColor = TextColor,
+                    Font = new Font(Font.FontFamily, 16F, FontStyle.Bold),
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                Label description = new Label
+                {
+                    Text = renaming ? "輸入新的組合名稱，儲存後會立即更新清單。" : "輸入容易辨識的名稱，建立後即可加入 APK。",
+                    ForeColor = Muted,
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                Label prompt = new Label
+                {
+                    Text = label,
+                    ForeColor = TextColor,
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.BottomLeft
+                };
+                TextBox input = new TextBox
+                {
+                    Text = value,
+                    BackColor = Card2,
+                    ForeColor = TextColor,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    Font = new Font(Font.FontFamily, 11.5F),
+                    Dock = DockStyle.Fill,
+                    Margin = ScalePadding(new Padding(0, 6, 0, 5), scale),
+                    MaxLength = 100
+                };
+
+                FlowLayoutPanel buttons = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor = Bg,
+                    FlowDirection = FlowDirection.RightToLeft,
+                    WrapContents = false,
+                    Margin = new Padding(0),
+                    Padding = ScalePadding(new Padding(0, 6, 0, 0), scale)
+                };
+                Button ok = NewButton(renaming ? "儲存名稱" : "建立組合", true, 126);
+                ok.Size = new Size(ScaleValue(126, scale), ScaleValue(42, scale));
+                ok.Margin = ScalePadding(new Padding(10, 0, 0, 0), scale);
                 ok.DialogResult = DialogResult.OK;
-                Button cancel = NewButton("取消", false, 86);
-                cancel.Location = new Point(314, 96);
+                Button cancel = NewButton("取消", false, 96);
+                cancel.Size = new Size(ScaleValue(96, scale), ScaleValue(42, scale));
+                cancel.Margin = new Padding(0);
                 cancel.DialogResult = DialogResult.Cancel;
-                form.Controls.Add(prompt);
-                form.Controls.Add(input);
-                form.Controls.Add(ok);
-                form.Controls.Add(cancel);
+                buttons.Controls.Add(ok);
+                buttons.Controls.Add(cancel);
+
+                layout.Controls.Add(heading, 0, 0);
+                layout.Controls.Add(description, 0, 1);
+                layout.Controls.Add(prompt, 0, 2);
+                layout.Controls.Add(input, 0, 3);
+                layout.Controls.Add(buttons, 0, 5);
+                form.Controls.Add(layout);
                 form.AcceptButton = ok;
                 form.CancelButton = cancel;
                 form.Shown += delegate { input.Focus(); input.SelectAll(); };
