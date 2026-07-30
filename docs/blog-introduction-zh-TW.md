@@ -15,7 +15,7 @@ date: 2026-07-16
 
 我把這些常用流程整理成一套 Windows 圖形化工具——**Android ADB 快速工具**。它不需要安裝，開啟單一執行檔、指定 Google 官方的 `adb.exe`，就能用滑鼠完成多數日常工作；需要大量部署 APK 時，也能直接拖放檔案或建立可重複使用的安裝組合。
 
-目前版本為 **v2.0.1**，專案原始碼與 Windows 執行檔皆已公開在 GitHub。
+目前版本為 **v2.0.2**，專案原始碼與 Windows 執行檔皆已公開在 GitHub。
 
 > **下載最新版：** [AndroidADBTools Releases](https://github.com/ahui3c/AndroidADBTools/releases)<br>
 > **原始碼：** [github.com/ahui3c/AndroidADBTools](https://github.com/ahui3c/AndroidADBTools)
@@ -135,11 +135,13 @@ Android 裝置的亮度上限不一定都是 255。有些品牌或系統版本�
 
 ### 使用色度計全自動調整到指定 nit
 
-v2.0.1 在原有手動控制下方加入「實測 nit 閉迴路」模式。使用者可指定 ArgyllCMS 的 `spotread.exe`、選擇性的 `.ccss`／`.ccmx` 修正檔，輸入例如 **200 nit** 與容許誤差。程式會先讓手機顯示全白測試圖，再反覆進行「設定 Android 亮度 → 等待穩定 → 由色度計量測」；達標時保留結果，無法達標時則套用實測最接近的亮度並顯示誤差。
+程式在原有手動控制下方提供「實測 nit 閉迴路」模式。使用者可指定 ArgyllCMS 的 `spotread.exe`、選擇性的 `.ccss`／`.ccmx` 修正檔，輸入例如 **200 nit** 與容許誤差。程式會先讓手機顯示全白測試圖，再反覆進行「設定 Android 亮度 → 等待穩定 → 由色度計量測」；達標時保留結果，無法達標時則套用實測最接近的亮度並顯示誤差。
 
-ArgyllCMS 的發光量測會回傳絕對 XYZ，其中 Y 可作為 cd/m²，也就是日常所稱的 nit。操作前應先用「試量測」確認儀器可被辨識，量測時讓感測器貼平畫面中央、關閉自動亮度，並避免通知、導覽列與圖片檢視器工具列遮住白畫面。OLED 等面板若有合適的光譜或矩陣修正檔，也建議一併指定。
+ArgyllCMS 的發光量測會回傳絕對 XYZ，其中 Y 可作為 cd/m²，也就是日常所稱的 nit。操作前應先用「設備測試」確認儀器可被辨識，量測時讓感測器貼平畫面中央、關閉自動亮度，並避免通知、導覽列與圖片檢視器工具列遮住白畫面。OLED 等面板若有合適的光譜或矩陣修正檔，也建議一併指定。
 
-需要注意的是，截至 ArgyllCMS 3.5.0，官方儀器清單並未明確列出 Calibrite Display Plus HL；因此本工具將它標示為實驗性相容，最終以 `spotread` 是否能讀到實際數值為準。此外，本功能只能控制 Android 可寫入的亮度範圍，不能強制啟用廠商的陽光高亮模式、HDR 或解除溫度／功耗限制，也不等同完整色彩校正。
+相容量測設備不限單一品牌，常見系列包含 Calibrite ColorChecker Display、X-Rite i1Display／i1Pro、Datacolor Spyder、Klein K10-A 與 ColorHug；完整型號與個別安裝需求請參考 [ArgyllCMS 官方支援設備清單](https://www.argyllcms.com/doc/instruments.html)。部分設備需要原廠韌體、校正資料或額外驅動，最終仍以 `spotread` 是否能讀到實際數值為準。此外，本功能只能控制 Android 可寫入的亮度範圍，不能強制啟用廠商的陽光高亮模式、HDR 或解除溫度／功耗限制，也不等同完整色彩校正。
+
+常見相容系列包括 ColorChecker Display／Pro／Plus、i1Display Pro／Pro Plus、ColorMunki Display、i1Pro2／i1Pro3、Spyder 3／4／5、SpyderX／X2、Klein K10-A、ColorHug／ColorHug2 與 JETI specbos／spectraval。程式的「相容量測設備」視窗提供摘要；更完整的型號、能力與驅動需求請查看 [ArgyllCMS 官方設備頁](https://www.argyllcms.com/doc/instruments.html)與 [Windows 安裝說明](https://www.argyllcms.com/doc/Installing_MSWindows.html)。
 
 > 不同品牌可能限制透過 ADB 寫入部分系統設定；如果套用失敗，可到「執行紀錄」查看手機回傳內容。
 
@@ -203,7 +205,7 @@ Android 11 以上可在開發人員選項使用「無線偵錯」與六位數配
 %LOCALAPPDATA%\AndroidADBTools\settings.json
 ```
 
-其中包含 ADB 路徑、自訂 APK 組合與排序、視窗大小、資料下載位置及檔案大小過濾設定。要將程式搬到另一台電腦時，APK 資料夾同步組合可直接隨程式複製；自訂清單若引用原電腦的絕對路徑，則需要重新指定檔案。
+其中包含 ADB 路徑、自訂 APK 組合與排序、視窗大小、資料下載位置及檔案大小過濾設定。要將程式搬到另一台電腦時，APK 資料夾同步組合可直接隨程式複製；自訂清單若引用原電腦的絕對路徑，則需要重新指定檔案。Release 另提供 `-complete` 完整包，已內含 ADB 與 `spotread.exe`；沒有 `-complete` 後綴的標準包只包含 AndroidADBTools。
 
 ## 從原始碼自行建置
 
@@ -258,7 +260,7 @@ ADB 擁有安裝 App、讀取共享儲存空間及修改部分系統設定的能
 - **最新版下載：** [GitHub Releases](https://github.com/ahui3c/AndroidADBTools/releases)
 - **原始碼與問題回報：** [AndroidADBTools GitHub Repository](https://github.com/ahui3c/AndroidADBTools)
 - **Android Platform-Tools：** [Google 官方下載頁](https://developer.android.com/tools/releases/platform-tools)
-- **目前版本：** v2.0.1
+- **目前版本：** v2.0.2
 - **授權：** GNU Affero General Public License v3.0（AGPL-3.0-only）
 
 從 v1.16.0 起，專案改採 AGPLv3；v1.15.6 與更早已發布版本仍維持原有 MIT License。使用、修改或散布前，請閱讀 GitHub 專案中的完整授權條款。

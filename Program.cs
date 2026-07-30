@@ -32,8 +32,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.1.0")]
-[assembly: AssemblyFileVersion("2.0.1.0")]
+[assembly: AssemblyVersion("2.0.2.0")]
+[assembly: AssemblyFileVersion("2.0.2.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -1168,18 +1168,22 @@ namespace AndroidADBTools
             layout.SetColumnSpan(title, 4);
             Label note = new Label
             {
-                Text = "將 Calibrite Display Plus HL 感測面貼平手機中央並顯示全白畫面。程式會反覆量測 cd/m²、調整 Android 亮度，直到接近目標值。HL 是否可用以 spotread 實際辨識結果為準。",
+                Text = "將支援 ArgyllCMS spotread 的顯示器量測設備貼平手機中央，並顯示全白畫面。程式會反覆實測 cd/m²、調整 Android 亮度，直到接近目標值。",
                 ForeColor = Muted,
                 Dock = DockStyle.Fill,
                 AutoEllipsis = true
             };
             layout.Controls.Add(note, 0, 1);
-            layout.SetColumnSpan(note, 4);
+            layout.SetColumnSpan(note, 3);
+            Button compatibleMetersButton = NewButton("相容量測設備", false, 124);
+            compatibleMetersButton.Dock = DockStyle.Fill;
+            compatibleMetersButton.Margin = new Padding(5, 3, 0, 3);
+            layout.Controls.Add(compatibleMetersButton, 3, 1);
 
             spotreadPathTextBox = BrightnessToolTextBox(settings.SpotreadPath);
-            browseSpotreadButton = NewButton("選擇 spotread.exe", false, 124);
+            browseSpotreadButton = NewButton("選擇執行檔", false, 124);
             browseSpotreadButton.Dock = DockStyle.Fill;
-            testMeterButton = NewButton("試量測", false, 112);
+            testMeterButton = NewButton("設備測試", false, 112);
             testMeterButton.Dock = DockStyle.Fill;
             layout.Controls.Add(BrightnessToolLabel("ArgyllCMS spotread"), 0, 2);
             layout.Controls.Add(spotreadPathTextBox, 1, 2);
@@ -1220,7 +1224,7 @@ namespace AndroidADBTools
             layout.Controls.Add(autoBrightnessProgressBar, 0, 6);
             layout.SetColumnSpan(autoBrightnessProgressBar, 4);
             autoBrightnessReadingLabel = new Label { Text = "尚未量測", ForeColor = Muted, Dock = DockStyle.Top, Height = 24, AutoEllipsis = true };
-            autoBrightnessStatusLabel = new Label { Text = "請先選擇 ArgyllCMS bin 資料夾中的 spotread.exe，並按「試量測」確認儀器。", ForeColor = Muted, Dock = DockStyle.Fill, AutoEllipsis = true };
+            autoBrightnessStatusLabel = new Label { Text = "請先選擇 ArgyllCMS bin 資料夾中的 spotread.exe，並按「設備測試」確認儀器。", ForeColor = Muted, Dock = DockStyle.Fill, AutoEllipsis = true };
             Panel statePanel = new Panel { Dock = DockStyle.Fill, BackColor = card.BackColor };
             statePanel.Controls.Add(autoBrightnessStatusLabel);
             statePanel.Controls.Add(autoBrightnessReadingLabel);
@@ -1232,6 +1236,7 @@ namespace AndroidADBTools
             card.Controls.Add(layout);
 
             browseSpotreadButton.Click += BrowseSpotread;
+            compatibleMetersButton.Click += ShowCompatibleBrightnessMeters;
             browseSpotreadCorrectionButton.Click += BrowseSpotreadCorrection;
             clearCorrectionButton.Click += delegate
             {
@@ -2908,7 +2913,7 @@ namespace AndroidADBTools
                     Dock = DockStyle.Fill,
                     BackColor = Bg,
                     ColumnCount = 1,
-                    RowCount = 8,
+                    RowCount = 9,
                     Margin = new Padding(0)
                 };
                 layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -2918,6 +2923,7 @@ namespace AndroidADBTools
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(50, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(54, scale)));
                 aboutForm.Controls.Add(layout);
@@ -2961,6 +2967,11 @@ namespace AndroidADBTools
                 {
                     OpenExternalLink("https://github.com/ahui3c/AndroidADBTools/blob/main/LICENSE");
                 };
+                LinkLabel thirdParty = NewAboutLink("第三方元件：Android ADB 與 ArgyllCMS spotread 授權資訊");
+                thirdParty.LinkClicked += delegate
+                {
+                    OpenExternalLink("https://github.com/ahui3c/AndroidADBTools/blob/main/THIRD_PARTY_NOTICES.md");
+                };
                 FlowLayoutPanel actions = new FlowLayoutPanel
                 {
                     Dock = DockStyle.Fill,
@@ -2982,7 +2993,8 @@ namespace AndroidADBTools
                 layout.Controls.Add(email, 0, 4);
                 layout.Controls.Add(website, 0, 5);
                 layout.Controls.Add(license, 0, 6);
-                layout.Controls.Add(actions, 0, 7);
+                layout.Controls.Add(thirdParty, 0, 7);
+                layout.Controls.Add(actions, 0, 8);
                 ApplySmoothTextRendering(aboutForm);
                 aboutForm.ShowDialog(this);
             }
@@ -3012,6 +3024,101 @@ namespace AndroidADBTools
             catch (Exception ex)
             {
                 MessageBox.Show(this, "無法開啟連結。\n\n" + ex.Message, "開啟失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void ShowCompatibleBrightnessMeters(object sender, EventArgs e)
+        {
+            using (Form form = new Form())
+            {
+                float scale = Math.Max(1F, currentDpiScale);
+                form.Text = "ArgyllCMS 相容量測設備";
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.BackColor = Bg;
+                form.ForeColor = TextColor;
+                form.Font = Font;
+                form.AutoScaleMode = AutoScaleMode.None;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.MaximizeBox = false;
+                form.MinimizeBox = false;
+                form.ShowInTaskbar = false;
+                form.ClientSize = ScaleSize(new Size(710, 470), scale);
+
+                TableLayoutPanel layout = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    BackColor = Bg,
+                    Padding = ScalePadding(new Padding(22, 18, 22, 16), scale),
+                    ColumnCount = 1,
+                    RowCount = 5
+                };
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(54, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(40, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(52, scale)));
+
+                Label title = new Label
+                {
+                    Text = "常見相容量測設備",
+                    ForeColor = TextColor,
+                    Font = new Font(Font.FontFamily, 16F, FontStyle.Bold),
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                Label intro = new Label
+                {
+                    Text = "本功能透過 ArgyllCMS spotread 讀取顯示器亮度，不限定單一品牌或型號。以下為官方清單中的常見系列：",
+                    ForeColor = Muted,
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
+                Label models = new Label
+                {
+                    Text =
+                        "• Calibrite：ColorChecker Display／Display Pro／Display Plus\r\n" +
+                        "• X-Rite：i1Display Pro／Pro Plus、ColorMunki Display、i1Display Studio\r\n" +
+                        "• X-Rite 光譜儀：ColorMunki Design／Photo、i1Studio、i1Pro2／i1Pro3 系列\r\n" +
+                        "• Datacolor：Spyder 3／4／5、SpyderX／X2、Spyder／SpyderPRO（2024）\r\n" +
+                        "• 其他：Klein K10-A、ColorHug／ColorHug2、DTP94、Eye-One Display、Huey、HCFR\r\n\r\n" +
+                        "這不是完整清單。部分設備需要原廠韌體、校正資料或額外驅動；新版或更名型號是否可用，請以「設備測試」能否由 spotread 正確辨識並回傳 cd/m² 為準。",
+                    ForeColor = TextColor,
+                    BackColor = Card2,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    Dock = DockStyle.Fill,
+                    Padding = ScalePadding(new Padding(15, 13, 15, 13), scale),
+                    TextAlign = ContentAlignment.TopLeft
+                };
+                LinkLabel officialList = NewAboutLink("開啟 ArgyllCMS 官方完整支援設備清單");
+                officialList.LinkClicked += delegate
+                {
+                    OpenExternalLink("https://www.argyllcms.com/doc/instruments.html");
+                };
+                FlowLayoutPanel actions = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    FlowDirection = FlowDirection.RightToLeft,
+                    WrapContents = false,
+                    BackColor = Bg,
+                    Padding = ScalePadding(new Padding(0, 8, 0, 0), scale)
+                };
+                Button close = NewButton("關閉", true, 110);
+                close.Size = ScaleSize(new Size(110, 36), scale);
+                close.MinimumSize = close.Size;
+                close.Click += delegate { form.Close(); };
+                actions.Controls.Add(close);
+
+                layout.Controls.Add(title, 0, 0);
+                layout.Controls.Add(intro, 0, 1);
+                layout.Controls.Add(models, 0, 2);
+                layout.Controls.Add(officialList, 0, 3);
+                layout.Controls.Add(actions, 0, 4);
+                form.Controls.Add(layout);
+                form.AcceptButton = close;
+                form.CancelButton = close;
+                ApplySmoothTextRendering(form);
+                form.ShowDialog(this);
             }
         }
 
@@ -4209,7 +4316,7 @@ namespace AndroidADBTools
                 settings.SpotreadPath = dialog.FileName;
                 spotreadPathTextBox.Text = dialog.FileName;
                 SaveSettings();
-                autoBrightnessStatusLabel.Text = "已指定 spotread.exe；請連接色度計並按「試量測」。";
+                autoBrightnessStatusLabel.Text = "已指定 spotread.exe；請連接色度計並按「設備測試」。";
                 autoBrightnessStatusLabel.ForeColor = Muted;
             }
         }
@@ -4443,20 +4550,20 @@ namespace AndroidADBTools
         {
             if (autoBrightnessRunning)
             {
-                autoBrightnessStatusLabel.Text = "全自動調整正在執行，無法同時試量測。";
+                autoBrightnessStatusLabel.Text = "全自動調整正在執行，無法同時執行設備測試。";
                 autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
                 return;
             }
             if (busy)
             {
-                autoBrightnessStatusLabel.Text = "程式正在執行其他操作，請等操作完成後再試量測。";
+                autoBrightnessStatusLabel.Text = "程式正在執行其他操作，請等操作完成後再執行設備測試。";
                 autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
                 return;
             }
             string spotread = FindSpotread();
             if (String.IsNullOrWhiteSpace(spotread))
             {
-                autoBrightnessStatusLabel.Text = "找不到 spotread.exe，請先按「選擇 spotread.exe」。";
+                autoBrightnessStatusLabel.Text = "找不到 spotread.exe，請先按「選擇執行檔」。";
                 autoBrightnessStatusLabel.ForeColor = Red;
                 return;
             }
@@ -4464,8 +4571,8 @@ namespace AndroidADBTools
             spotreadPathTextBox.Text = spotread;
             SaveSettings();
             testMeterButton.Enabled = false;
-            testMeterButton.Text = "量測中…";
-            autoBrightnessStatusLabel.Text = "正在呼叫 spotread 試量測；請將感測器貼在發光畫面上…";
+            testMeterButton.Text = "測試中…";
+            autoBrightnessStatusLabel.Text = "正在呼叫 spotread 進行設備測試；請將感測器貼在發光畫面上…";
             autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
             autoBrightnessProgressBar.Style = ProgressBarStyle.Marquee;
             autoBrightnessProgressBar.MarqueeAnimationSpeed = 24;
@@ -4478,33 +4585,33 @@ namespace AndroidADBTools
                     autoBrightnessReadingLabel.ForeColor = Green;
                     autoBrightnessStatusLabel.Text = "spotread 已成功辨識並讀取儀器，可開始全自動調整。";
                     autoBrightnessStatusLabel.ForeColor = Green;
-                    Log("色度計試量測成功：" + measured.Item2.ToString("0.000", CultureInfo.InvariantCulture) + " nit");
+                    Log("色度計設備測試成功：" + measured.Item2.ToString("0.000", CultureInfo.InvariantCulture) + " nit");
                 }
                 else
                 {
-                    autoBrightnessReadingLabel.Text = "試量測失敗";
+                    autoBrightnessReadingLabel.Text = "設備測試失敗";
                     autoBrightnessReadingLabel.ForeColor = Red;
                     autoBrightnessStatusLabel.Text = "無法取得亮度：" + ShortStatus(measured.Item3, 260);
                     autoBrightnessStatusLabel.ForeColor = Red;
-                    Log("色度計試量測失敗：" + measured.Item3);
-                    MessageBox.Show(this, measured.Item3, "色度計試量測失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    Log("色度計設備測試失敗：" + measured.Item3);
+                    MessageBox.Show(this, measured.Item3, "色度計設備測試失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
             catch (Exception ex)
             {
-                autoBrightnessReadingLabel.Text = "試量測失敗";
+                autoBrightnessReadingLabel.Text = "設備測試失敗";
                 autoBrightnessReadingLabel.ForeColor = Red;
-                autoBrightnessStatusLabel.Text = "試量測發生錯誤：" + ShortStatus(ex.Message, 260);
+                autoBrightnessStatusLabel.Text = "設備測試發生錯誤：" + ShortStatus(ex.Message, 260);
                 autoBrightnessStatusLabel.ForeColor = Red;
-                Log("色度計試量測發生錯誤：" + ex.Message);
-                MessageBox.Show(this, ex.Message, "色度計試量測錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Log("色度計設備測試發生錯誤：" + ex.Message);
+                MessageBox.Show(this, ex.Message, "色度計設備測試錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally
             {
                 autoBrightnessProgressBar.Style = ProgressBarStyle.Continuous;
                 autoBrightnessProgressBar.MarqueeAnimationSpeed = 0;
                 autoBrightnessProgressBar.Value = 0;
-                testMeterButton.Text = "試量測";
+                testMeterButton.Text = "設備測試";
                 testMeterButton.Enabled = true;
             }
         }
@@ -4695,7 +4802,7 @@ namespace AndroidADBTools
                 autoBrightnessStatusLabel.Text = "全自動調整失敗：" + ShortStatus(ex.Message, 300);
                 autoBrightnessStatusLabel.ForeColor = Red;
                 Log("全自動亮度調整失敗：" + ex.Message);
-                MessageBox.Show(this, ex.Message + (measurementFailed ? "\n\n請先用「試量測」確認 ArgyllCMS 能辨識儀器。" : ""),
+                MessageBox.Show(this, ex.Message + (measurementFailed ? "\n\n請先用「設備測試」確認 ArgyllCMS 能辨識儀器。" : ""),
                     "全自動亮度調整失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally

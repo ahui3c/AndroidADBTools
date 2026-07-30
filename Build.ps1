@@ -19,6 +19,7 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if ($LASTEXITCODE -ne 0) { throw '編譯失敗。' }
 Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $outDir -Force
 Copy-Item -LiteralPath (Join-Path $root 'README.en.md') -Destination $outDir -Force
+Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $outDir -Force
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $outDir -Force
 Copy-Item -LiteralPath (Join-Path $root 'App.config') -Destination (Join-Path $outDir 'AndroidADBTools.exe.config') -Force
 Write-Host "完成：$outDir\AndroidADBTools.exe"

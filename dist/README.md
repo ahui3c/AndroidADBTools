@@ -12,7 +12,7 @@
 
 一套免安裝的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.1**
+目前版本：**v2.0.2**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
@@ -40,7 +40,7 @@
 
 - Windows 10 或 Windows 11
 - .NET Framework 4.8
-- Android Platform Tools 中的 `adb.exe`
+- Android Platform Tools 中的 `adb.exe`（Complete 版已內附）
 - 手機已開啟「開發人員選項」及「USB 偵錯」或「無線偵錯」
 
 ## Wi-Fi 配對與相容性
@@ -67,9 +67,14 @@
 
 ## 下載與使用
 
-1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 下載最新版 `AndroidADBTools.exe` 或完整 ZIP。
+GitHub Release 提供兩種壓縮包：
+
+- `AndroidADBTools-v2.0.2.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.2-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+
+1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的 ZIP 並完整解壓縮。
 2. 執行 `AndroidADBTools.exe`。
-3. 若程式沒有自動找到 ADB，按「選擇 adb.exe」，指定 Android SDK 的 `platform-tools\adb.exe`。
+3. 使用標準版且程式沒有找到 ADB 時，按「選擇 adb.exe」並指定 Android SDK 的 `platform-tools\adb.exe`。
 4. 連接並授權手機後按「重新檢查」。
 
 程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。
@@ -109,15 +114,26 @@ APKs/
 
 「亮度調整」頁上方保留原本的手動滑桿、數值與鍵盤控制；下方新增外接色度計閉迴路校準：
 
-1. 從 [ArgyllCMS 官方網站](https://www.argyllcms.com/) 下載 Windows 版本，於程式選擇 `bin\spotread.exe`。ArgyllCMS 不隨本工具散布。
-2. 連接手機與色度計，將 Calibrite Display Plus HL 感測面貼平手機畫面中央。
+1. Complete 版已內附 ArgyllCMS 3.5.0 `spotread.exe`；標準版請從 [ArgyllCMS 官方網站](https://www.argyllcms.com/) 下載 Windows 版本，再於程式選擇 `bin\spotread.exe`。
+2. 連接手機與 ArgyllCMS 相容的顯示器量測設備，將感測面貼平手機畫面中央。
 3. 按「手機開啟白色測試圖」，並確認圖片檢視器為全螢幕、沒有工具列或通知遮擋。
-4. 先按「試量測」。成功取得絕對發光量測的 Y 值後，輸入目標（例如 200 nit）與允許誤差，再開始全自動調整。
+4. 先按「設備測試」。成功取得絕對發光量測的 Y 值後，輸入目標（例如 200 nit）與允許誤差，再開始全自動調整。
 5. 程式會關閉 Android 自動亮度、反覆設定亮度、等待畫面穩定並呼叫 `spotread -e -O`；達標後保留最接近目標的 Android 亮度值。
 
 可選擇 `.ccss`／`.ccmx` 顯示器修正檔，以改善特定 OLED／LCD 光譜與色度計的配對誤差。此功能只調整白畫面的實測亮度，不等同完整色彩校正、ICC 校正或 HDR／高亮度模式控制。目標若超過手機當下可達亮度，程式會套用量測到的最接近結果並說明誤差。
 
-**Calibrite Display Plus HL 相容性提醒：**截至 ArgyllCMS 3.5.0，官方支援清單明確列出的是 ColorChecker Display 系列等既有裝置，沒有明確列出 Display Plus HL。因此本工具將 HL 視為實驗性相容：是否可用以「試量測」能否由 `spotread` 實際辨識並回傳讀值為準。若失敗，請確認使用最新版 ArgyllCMS、關閉可能占用儀器的校色軟體，並檢查驅動與 USB 連線。
+### spotread 相容量測設備
+
+以下為 ArgyllCMS 官方清單中較常見、可用於顯示器發光量測的系列，並非完整名單：
+
+| 品牌／類型 | 常見相容機型 |
+| --- | --- |
+| Calibrite／X-Rite 色度計 | ColorChecker Display／Pro／Plus、i1Display Pro／Pro Plus、ColorMunki Display、i1Display Studio |
+| X-Rite 光譜儀 | ColorMunki Design／Photo、i1Studio、ColorChecker Studio、i1Pro2、i1Pro3／Pro3 Plus |
+| Datacolor | Spyder 3／4／5、SpyderX、SpyderX2、Spyder／SpyderPRO（2024） |
+| 專業與其他設備 | Klein K10-A、JETI specbos／spectraval、ColorHug／ColorHug2、DTP94、Eye-One Display、Huey、HCFR |
+
+程式內也可按「相容量測設備」查看摘要。完整型號、能力與個別安裝需求請參考 [ArgyllCMS 官方支援設備清單](https://www.argyllcms.com/doc/instruments.html)及 [Windows 儀器安裝說明](https://www.argyllcms.com/doc/Installing_MSWindows.html)。部分設備需要原廠韌體、校正資料或額外驅動；實際是否可用仍以「設備測試」能否由 `spotread` 正確辨識並回傳讀值為準。若失敗，請關閉可能占用儀器的校色或 RGB 燈效軟體，並檢查驅動與 USB 連線。
 
 ## 從原始碼建置
 
@@ -146,6 +162,8 @@ powershell -ExecutionPolicy Bypass -File .\Build.ps1
 已經發布的 **v1.15.6 與更早版本仍維持原有 MIT License**；授權變更不會撤回使用者已取得的 MIT 權利。舊版 MIT 文字另存於 [LICENSE-MIT-LEGACY](LICENSE-MIT-LEGACY)，僅供歷史版本對照。
 
 本程式按「現狀」提供，不附帶任何明示或默示擔保。完整條款以 [LICENSE](LICENSE) 為準。
+
+Complete 版額外包含 Apache License 2.0 的 Android ADB 元件，以及 GNU AGPLv3 的 ArgyllCMS `spotread.exe`。版本、來源、授權文件與對應原始碼資訊請見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；標準版不包含這些第三方執行檔。
 
 ## 作者
 

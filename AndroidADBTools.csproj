@@ -41,6 +41,9 @@
     <None Include="README.en.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="THIRD_PARTY_NOTICES.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="assets\app-icon.ico" />
     <None Include="assets\app-icon.png" />
   </ItemGroup>

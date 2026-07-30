@@ -12,7 +12,7 @@
 
 A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.1**
+Current version: **v2.0.2**
 
 [View the complete changelog](CHANGELOG.md)
 
@@ -40,7 +40,7 @@ Current version: **v2.0.1**
 
 - Windows 10 or Windows 11
 - .NET Framework 4.8
-- `adb.exe` from Android Platform Tools
+- `adb.exe` from Android Platform Tools (included in the Complete package)
 - Developer options plus USB debugging or wireless debugging enabled on the Android device
 
 ## Wi-Fi Pairing and Compatibility
@@ -67,9 +67,14 @@ Use the latest version from the official page. Google states that current Platfo
 
 ## Download and Use
 
-1. Download the latest `AndroidADBTools.exe` or full ZIP package from [Releases](https://github.com/ahui3c/AndroidADBTools/releases).
+Each GitHub Release provides two archives:
+
+- `AndroidADBTools-v2.0.2.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.2-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+
+1. Choose the ZIP you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases) and extract the entire archive.
 2. Run `AndroidADBTools.exe`.
-3. If ADB is not detected automatically, click **Select adb.exe** and choose `platform-tools\adb.exe` from the Android SDK.
+3. With the standard package, if ADB is not detected automatically, click **Select adb.exe** and choose the Android SDK's `platform-tools\adb.exe`.
 4. Connect and authorize the phone, then click **Check again**.
 
 The app searches the saved ADB path, its own folder, `platform-tools`, the default Android SDK location, and the system `PATH`.
@@ -109,15 +114,26 @@ Each direct child folder becomes an installation group when the app starts. APK 
 
 The upper part of the **Brightness** page retains all manual controls. The lower part adds closed-loop calibration with an external colorimeter:
 
-1. Download the Windows build from the [official ArgyllCMS website](https://www.argyllcms.com/) and select `bin\spotread.exe` in the app. ArgyllCMS is not bundled with this project.
-2. Connect the phone and colorimeter, then place the Calibrite Display Plus HL sensor flat against the center of the display.
+1. The Complete package includes ArgyllCMS 3.5.0 `spotread.exe`. With the standard package, download the Windows build from the [official ArgyllCMS website](https://www.argyllcms.com/) and select `bin\spotread.exe` in the application.
+2. Connect the phone and an ArgyllCMS-compatible display measurement instrument, then place its sensor flat against the center of the display.
 3. Open the white test image on the phone and make sure it is truly full-screen, with no viewer controls or notifications covering it.
-4. Run **Test measurement** first. Once an absolute emissive Y reading is available, enter the target (for example, 200 nit) and tolerance, then start automatic adjustment.
+4. Run **Device test** first. Once an absolute emissive Y reading is available, enter the target (for example, 200 nit) and tolerance, then start automatic adjustment.
 5. The app disables Android auto brightness and repeatedly changes brightness, waits for stabilization, and runs `spotread -e -O`. It keeps the Android value whose measured luminance is closest to the target.
 
 An optional `.ccss` or `.ccmx` display correction can reduce meter/display spectral mismatch, especially with OLED panels. This feature controls measured white luminance only; it is not a complete color/ICC calibration and cannot enable HDR or OEM high-brightness modes. If the target is outside the phone's current range, the closest measured result is retained and reported.
 
-**Calibrite Display Plus HL compatibility:** as of ArgyllCMS 3.5.0, the official instrument list explicitly names earlier ColorChecker Display-family devices but does not explicitly list Display Plus HL. HL support is therefore experimental in this application. The test measurement is authoritative: calibration starts only if `spotread` can detect the instrument and return a reading. Use the latest ArgyllCMS release, close other calibration software that may own the device, and check its driver and USB connection if detection fails.
+### spotread-Compatible Measurement Instruments
+
+The following are common display-measurement families from the official ArgyllCMS list; this is not an exhaustive list:
+
+| Brand/type | Common compatible models |
+| --- | --- |
+| Calibrite/X-Rite colorimeters | ColorChecker Display/Pro/Plus, i1Display Pro/Pro Plus, ColorMunki Display, i1Display Studio |
+| X-Rite spectrometers | ColorMunki Design/Photo, i1Studio, ColorChecker Studio, i1Pro2, i1Pro3/Pro3 Plus |
+| Datacolor | Spyder 3/4/5, SpyderX, SpyderX2, Spyder/SpyderPRO (2024) |
+| Professional and other instruments | Klein K10-A, JETI specbos/spectraval, ColorHug/ColorHug2, DTP94, Eye-One Display, Huey, HCFR |
+
+Select **Compatible instruments** in the application for a summary. See the [complete official ArgyllCMS instrument list](https://www.argyllcms.com/doc/instruments.html) and [Windows instrument installation guide](https://www.argyllcms.com/doc/Installing_MSWindows.html) for model-specific capabilities and setup. Some instruments require vendor firmware, calibration data, or an additional driver. The authoritative check is whether **Device test** lets `spotread` identify the instrument and return a reading. If detection fails, close calibration or RGB-lighting software that may own the device, then check the driver and USB connection.
 
 ## Build from Source
 
@@ -146,6 +162,8 @@ Starting with **v1.16.0**, this project is licensed under the [GNU Affero Genera
 Previously released **v1.15.6 and earlier versions remain under their original MIT License**. This change does not revoke rights already granted for those releases. The former MIT text is preserved in [LICENSE-MIT-LEGACY](LICENSE-MIT-LEGACY) for historical reference only.
 
 This program is provided as-is, without any warranty. See [LICENSE](LICENSE) for the complete terms.
+
+The Complete package additionally contains Android ADB components under Apache License 2.0 and ArgyllCMS `spotread.exe` under GNU AGPLv3. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for versions, upstream sources, license notices, and corresponding-source information. The standard package does not contain these third-party executables.
 
 ## Author
 
