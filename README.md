@@ -40,15 +40,15 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="常用 APK 批次安裝"><br><sub>常用 APK 組合與批次安裝</sub></td>
+    <td colspan="2"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="常用 APK 批次安裝"><br><sub>常用 APK 組合與批次安裝</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="快速安裝 APK 與傳輸資料"><br><sub>拖放 APK、檔案與資料夾</sub></td>
-  </tr>
-  <tr>
     <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="手動與全自動調整設備亮度"><br><sub>手動與全自動調整設備亮度</sub></td>
-    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="設備常用設定"><br><sub>亮度、螢幕、音量、網址與截圖設定</sub></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/05-data-backup.jpg" alt="設備圖片影音資料備份"><br><sub>下載並備份手機圖片與影音資料</sub></td>
+    <td width="67%"><img src="docs/screenshots/04-quick-settings.jpg" alt="設備常用設定"><br><sub>亮度、螢幕、音量、網址與截圖設定</sub></td>
+    <td width="33%"><img src="docs/screenshots/05-data-backup.jpg" alt="設備圖片影音資料備份"><br><sub>下載並備份手機圖片與影音資料</sub></td>
   </tr>
 </table>
 
