@@ -36,6 +36,22 @@
 - 下載前先取得檔案大小，可略過超過自訂上限的單一檔案（預設 2 GB）。
 - 支援 Per-Monitor V2 高 DPI、視窗大小記憶與 4K 顯示器縮放。
 
+## 軟體畫面
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="常用 APK 批次安裝"><br><sub>常用 APK 組合與批次安裝</sub></td>
+    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="快速安裝 APK 與傳輸資料"><br><sub>拖放 APK、檔案與資料夾</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="手動與全自動調整設備亮度"><br><sub>手動與全自動調整設備亮度</sub></td>
+    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="設備常用設定"><br><sub>亮度、螢幕、音量、網址與截圖設定</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/05-data-backup.jpg" alt="設備圖片影音資料備份"><br><sub>下載並備份手機圖片與影音資料</sub></td>
+  </tr>
+</table>
+
 ## 系統需求
 
 - Windows 10 或 Windows 11
@@ -79,7 +95,7 @@ GitHub Release 提供兩種壓縮包：
 3. 使用標準版且程式沒有找到 ADB 時，按「選擇 adb.exe」並指定 Android SDK 的 `platform-tools\adb.exe`。
 4. 連接並授權手機後按「重新檢查」。
 
-程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。
+程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`ADBtools\adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。尚未指定 `spotread.exe` 時，也會自動搜尋 Complete 版內附的 `Argyll\bin\spotread.exe` 並填入設定。
 
 ## APK 資料夾同步
 

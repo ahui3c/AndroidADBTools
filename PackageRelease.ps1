@@ -76,6 +76,12 @@ function Copy-CommonPackageFiles {
     Copy-Item -LiteralPath (Join-Path $root 'THIRD_PARTY_NOTICES.md') -Destination $Destination -Force
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $Destination -Force
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE-MIT-LEGACY') -Destination $Destination -Force
+    $screenshotsSource = Join-Path $root 'docs\screenshots'
+    if (Test-Path -LiteralPath $screenshotsSource -PathType Container) {
+        $docsDestination = Join-Path $Destination 'docs'
+        New-Item -ItemType Directory -Force -Path $docsDestination | Out-Null
+        Copy-Item -LiteralPath $screenshotsSource -Destination $docsDestination -Recurse -Force
+    }
 }
 
 Copy-CommonPackageFiles -Destination $standardDir

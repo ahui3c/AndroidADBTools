@@ -28,13 +28,29 @@ Current version: **v2.0.2**
 - Scans subfolders under the local `APKs` directory and exposes them as protected, folder-synchronized groups.
 - The split **Quick Install / Transfer** page installs dropped APKs on the left. On the right, choose `Download`, `DCIM`, `Pictures`, or the shared-storage root before dropping files or folders; directory structure is preserved.
 - Reads and adjusts device brightness using a slider, numeric input, or the `+` / `-` keys.
-- Adds measured-nit automatic brightness control with ArgyllCMS `spotread` and an external colorimeter. A closed loop repeatedly measures and adjusts Android brightness while the original manual controls remain available.
+- Adds automatic brightness adjustment using measured luminance with ArgyllCMS `spotread` and an external colorimeter. A closed loop repeatedly measures and adjusts Android brightness while the original manual controls remain available.
 - Controls auto brightness, 10-minute screen timeout, maximum timeout, and stay-awake-while-charging independently.
 - Applies and verifies each quick setting separately, so one failure does not stop the remaining settings.
 - Sets media volume to minimum or maximum, opens a URL on the phone, and saves a phone screenshot as PNG.
 - Downloads files from `DCIM`, `Pictures`, and `Picture`, preserves their directory structure, and creates a ZIP archive.
 - Reads remote file sizes before transfer and can skip individual files above a configurable limit (2 GB by default).
 - Supports Per-Monitor V2 high DPI, remembered window dimensions, and 4K display scaling.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="Reusable APK groups and batch installation"><br><sub>Reusable APK groups and batch installation</sub></td>
+    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="Quick APK installation and file transfer"><br><sub>Drag and drop APKs, files, and folders</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="Manual and automatic device brightness adjustment"><br><sub>Manual and automatic device brightness adjustment</sub></td>
+    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="Common device settings"><br><sub>Brightness, display, volume, URL, and screenshot controls</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/05-data-backup.jpg" alt="Phone photo and video backup"><br><sub>Download and back up phone photos and videos</sub></td>
+  </tr>
+</table>
 
 ## Requirements
 
@@ -46,6 +62,8 @@ Current version: **v2.0.2**
 ## Wi-Fi Pairing and Compatibility
 
 Click **Wi-Fi Connection** on the main screen to manage wireless debugging directly:
+
+> **Validation status:** Wi-Fi pairing, mDNS discovery, automatic reconnection, and multi-device behavior have not yet been verified across a sufficiently broad range of devices and networks. Treat them as testing-stage features. Availability depends on the Android version, OEM customization, ADB version, router client isolation, and firewall settings; keep USB debugging available as a fallback.
 
 1. On Android 11 (API 30) or later, open **Developer options > Wireless debugging > Pair device with pairing code**. Enter the displayed IP address, pairing port, and six-digit code, then click **Start pairing**.
 2. Return to the main Wireless debugging screen and enter the debugging connection port shown under **IP address & port**, then connect. The debugging port is normally different from the pairing port.
@@ -77,7 +95,7 @@ Each GitHub Release provides two archives:
 3. With the standard package, if ADB is not detected automatically, click **Select adb.exe** and choose the Android SDK's `platform-tools\adb.exe`.
 4. Connect and authorize the phone, then click **Check again**.
 
-The app searches the saved ADB path, its own folder, `platform-tools`, the default Android SDK location, and the system `PATH`.
+The app searches the saved ADB path, its own folder, `ADBtools\adb.exe`, `platform-tools\adb.exe`, the default Android SDK location, and the system `PATH`. If `spotread.exe` has not been selected, it also detects the Complete package's bundled `Argyll\bin\spotread.exe` and fills in the setting automatically.
 
 ## Folder-Synchronized APK Groups
 
@@ -110,7 +128,7 @@ Each direct child folder becomes an installation group when the app starts. APK 
 - Dropped folders retain their top-level folder name and complete subdirectory structure.
 - Each dropped item is processed independently; one failure does not stop the remaining transfers, and details are written to the execution log.
 
-## Measured-Nit Automatic Brightness
+## Automatic Brightness Adjustment Using Measured Luminance
 
 The upper part of the **Brightness** page retains all manual controls. The lower part adds closed-loop calibration with an external colorimeter:
 

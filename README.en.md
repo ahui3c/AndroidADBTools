@@ -36,6 +36,22 @@ Current version: **v2.0.2**
 - Reads remote file sizes before transfer and can skip individual files above a configurable limit (2 GB by default).
 - Supports Per-Monitor V2 high DPI, remembered window dimensions, and 4K display scaling.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="Reusable APK groups and batch installation"><br><sub>Reusable APK groups and batch installation</sub></td>
+    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="Quick APK installation and file transfer"><br><sub>Drag and drop APKs, files, and folders</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="Manual and automatic device brightness adjustment"><br><sub>Manual and automatic device brightness adjustment</sub></td>
+    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="Common device settings"><br><sub>Brightness, display, volume, URL, and screenshot controls</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/05-data-backup.jpg" alt="Phone photo and video backup"><br><sub>Download and back up phone photos and videos</sub></td>
+  </tr>
+</table>
+
 ## Requirements
 
 - Windows 10 or Windows 11
@@ -79,7 +95,7 @@ Each GitHub Release provides two archives:
 3. With the standard package, if ADB is not detected automatically, click **Select adb.exe** and choose the Android SDK's `platform-tools\adb.exe`.
 4. Connect and authorize the phone, then click **Check again**.
 
-The app searches the saved ADB path, its own folder, `platform-tools`, the default Android SDK location, and the system `PATH`.
+The app searches the saved ADB path, its own folder, `ADBtools\adb.exe`, `platform-tools\adb.exe`, the default Android SDK location, and the system `PATH`. If `spotread.exe` has not been selected, it also detects the Complete package's bundled `Argyll\bin\spotread.exe` and fills in the setting automatically.
 
 ## Folder-Synchronized APK Groups
 

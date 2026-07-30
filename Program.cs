@@ -444,6 +444,7 @@ namespace AndroidADBTools
             DoubleBuffered = true;
 
             BuildUi();
+            InitializeBundledToolPaths();
             Application.AddMessageFilter(this);
             CaptureDpiMetrics(this);
             ApplySmoothTextRendering(this);
@@ -965,7 +966,7 @@ namespace AndroidADBTools
             };
             Label hint = new Label
             {
-                Text = "上方保留手動調整；下方可搭配 ArgyllCMS 與外接色度計，依實測 nit 全自動校準。",
+                Text = "上方保留手動調整；下方可搭配 ArgyllCMS 相容感測器，自動調整設備亮度。",
                 ForeColor = Muted,
                 Dock = DockStyle.Top,
                 Height = 32
@@ -1158,7 +1159,7 @@ namespace AndroidADBTools
 
             Label title = new Label
             {
-                Text = "全自動調整亮度（實測 nit 閉迴路）",
+                Text = "全自動調整設備亮度",
                 ForeColor = TextColor,
                 Font = new Font(Font.FontFamily, 14F, FontStyle.Bold),
                 Dock = DockStyle.Fill,
@@ -1168,7 +1169,7 @@ namespace AndroidADBTools
             layout.SetColumnSpan(title, 4);
             Label note = new Label
             {
-                Text = "將支援 ArgyllCMS spotread 的顯示器量測設備貼平手機中央，並顯示全白畫面。程式會反覆實測 cd/m²、調整 Android 亮度，直到接近目標值。",
+                Text = "搭配支援 ArgyllCMS 驅動的感測器，將之緊貼全白畫面的設備螢幕中央。程式會自動調節與接收設備螢幕亮度數值，直到接近設定目標值。",
                 ForeColor = Muted,
                 Dock = DockStyle.Fill,
                 AutoEllipsis = true
@@ -2557,6 +2558,35 @@ namespace AndroidADBTools
             }
         }
 
+        private void InitializeBundledToolPaths()
+        {
+            bool changed = false;
+            if (String.IsNullOrWhiteSpace(settings.AdbPath))
+            {
+                string adb = FindAdb();
+                if (!String.IsNullOrWhiteSpace(adb))
+                {
+                    settings.AdbPath = adb;
+                    changed = true;
+                }
+            }
+
+            if (String.IsNullOrWhiteSpace(settings.SpotreadPath))
+            {
+                string spotread = FindSpotread();
+                if (!String.IsNullOrWhiteSpace(spotread))
+                {
+                    settings.SpotreadPath = spotread;
+                    if (spotreadPathTextBox != null) spotreadPathTextBox.Text = spotread;
+                    if (autoBrightnessStatusLabel != null)
+                        autoBrightnessStatusLabel.Text = "已自動找到 spotread.exe；連接感測器後可直接進行「設備測試」。";
+                    changed = true;
+                }
+            }
+
+            if (changed) SaveSettings();
+        }
+
         private void Log(string text)
         {
             if (logBox == null) return;
@@ -2574,6 +2604,8 @@ namespace AndroidADBTools
             if (!String.IsNullOrWhiteSpace(settings.AdbPath)) candidates.Add(settings.AdbPath);
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             candidates.Add(Path.Combine(baseDir, "adb.exe"));
+            candidates.Add(Path.Combine(baseDir, "ADBtools", "adb.exe"));
+            candidates.Add(Path.Combine(baseDir, "ADBtools", "platform-tools", "adb.exe"));
             candidates.Add(Path.Combine(baseDir, "platform-tools", "adb.exe"));
             string localSdk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk", "platform-tools", "adb.exe");
             candidates.Add(localSdk);
@@ -4343,6 +4375,8 @@ namespace AndroidADBTools
             if (!String.IsNullOrWhiteSpace(settings.SpotreadPath)) candidates.Add(settings.SpotreadPath);
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             candidates.Add(Path.Combine(baseDir, "spotread.exe"));
+            candidates.Add(Path.Combine(baseDir, "spotread", "spotread.exe"));
+            candidates.Add(Path.Combine(baseDir, "spotread", "bin", "spotread.exe"));
             candidates.Add(Path.Combine(baseDir, "ArgyllCMS", "bin", "spotread.exe"));
             candidates.Add(Path.Combine(baseDir, "Argyll", "bin", "spotread.exe"));
             foreach (string candidate in candidates)

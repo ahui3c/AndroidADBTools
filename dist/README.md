@@ -28,13 +28,29 @@
 - 自動掃描程式旁 `APKs` 目錄中的子資料夾，建立不可誤刪的同步安裝組合。
 - 「快速安裝 / 傳輸」提供左右雙拖曳區：左側拖入 APK 立即安裝；右側可選 `Download`、`DCIM`、`Pictures` 或內部儲存根目錄，再拖入檔案或資料夾並保留完整結構。
 - 讀取與即時調整手機亮度，支援滑桿、數值及 `+`／`-` 鍵。
-- 新增實測 nit 全自動亮度：搭配 ArgyllCMS `spotread` 與外接色度計，以閉迴路反覆量測並調整 Android 亮度至目標值；原有手動模式完整保留。
+- 新增實測自動調整亮度功能：搭配 ArgyllCMS `spotread` 與外接色度計，以閉迴路反覆量測並調整 Android 亮度至目標值；原有手動模式完整保留。
 - 快速設定自動亮度、10 分鐘關屏、最長關屏時間及充電時保持螢幕開啟。
 - 各項快速設定獨立執行並讀回驗證；單項失敗不影響其他設定。
 - 快速調整媒體音量、在手機開啟網址、擷取手機畫面並儲存 PNG。
 - 下載手機 `DCIM`、`Pictures`、`Picture` 內的檔案，保留目錄結構並壓縮成 ZIP。
 - 下載前先取得檔案大小，可略過超過自訂上限的單一檔案（預設 2 GB）。
 - 支援 Per-Monitor V2 高 DPI、視窗大小記憶與 4K 顯示器縮放。
+
+## 軟體畫面
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="常用 APK 批次安裝"><br><sub>常用 APK 組合與批次安裝</sub></td>
+    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="快速安裝 APK 與傳輸資料"><br><sub>拖放 APK、檔案與資料夾</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="手動與全自動調整設備亮度"><br><sub>手動與全自動調整設備亮度</sub></td>
+    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="設備常用設定"><br><sub>亮度、螢幕、音量、網址與截圖設定</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/05-data-backup.jpg" alt="設備圖片影音資料備份"><br><sub>下載並備份手機圖片與影音資料</sub></td>
+  </tr>
+</table>
 
 ## 系統需求
 
@@ -46,6 +62,8 @@
 ## Wi-Fi 配對與相容性
 
 按主畫面的「Wi-Fi 連線」即可直接管理無線偵錯：
+
+> **驗證狀態：** Wi-Fi 配對、mDNS 搜尋、自動重新連線及多裝置環境尚未完成足夠機型與網路環境的實機驗證，請視為測試中功能。實際可用性會受 Android 版本、廠牌客製系統、ADB 版本、路由器用戶端隔離及防火牆影響；使用前建議保留 USB 偵錯作為備援。
 
 1. Android 11（API 30）以上：在手機的「開發人員選項 > 無線偵錯」選擇使用配對碼配對，將手機顯示的 IP、配對 Port 與六位數配對碼輸入程式並按「開始配對」。
 2. 回到手機的無線偵錯主畫面，將「IP 位址與連接埠」中的偵錯 Port 輸入程式，再按「連線」。偵錯 Port 通常與配對 Port 不同。
@@ -77,7 +95,7 @@ GitHub Release 提供兩種壓縮包：
 3. 使用標準版且程式沒有找到 ADB 時，按「選擇 adb.exe」並指定 Android SDK 的 `platform-tools\adb.exe`。
 4. 連接並授權手機後按「重新檢查」。
 
-程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。
+程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`ADBtools\adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。尚未指定 `spotread.exe` 時，也會自動搜尋 Complete 版內附的 `Argyll\bin\spotread.exe` 並填入設定。
 
 ## APK 資料夾同步
 
@@ -110,7 +128,7 @@ APKs/
 - 拖入資料夾時會保留最外層資料夾名稱及所有子目錄結構。
 - 每個拖入項目會分別處理；單項失敗不會中止其餘傳輸，詳細結果可在「執行紀錄」查看。
 
-## 實測 nit 全自動亮度
+## 實測自動調整亮度功能
 
 「亮度調整」頁上方保留原本的手動滑桿、數值與鍵盤控制；下方新增外接色度計閉迴路校準：
 
