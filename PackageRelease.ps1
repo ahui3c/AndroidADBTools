@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '2.0.2',
+    [string]$Version = '2.0.3',
     [string]$PlatformToolsZip = '',
     [string]$ArgyllBinaryZip = '',
     [string]$ArgyllSourceZip = ''

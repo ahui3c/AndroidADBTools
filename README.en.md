@@ -12,7 +12,7 @@
 
 A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.2**
+Current version: **v2.0.3**
 
 [View the complete changelog](CHANGELOG.md)
 
@@ -31,8 +31,10 @@ Current version: **v2.0.2**
 - Adds automatic brightness adjustment using measured luminance with ArgyllCMS `spotread` and an external colorimeter. A closed loop repeatedly measures and adjusts Android brightness while the original manual controls remain available.
 - Controls auto brightness, 10-minute screen timeout, maximum timeout, and stay-awake-while-charging independently.
 - Applies and verifies each quick setting separately, so one failure does not stop the remaining settings.
-- Sets media volume to minimum or maximum, opens a URL on the phone, and saves a phone screenshot as PNG.
-- Downloads files from `DCIM`, `Pictures`, and `Picture`, preserves their directory structure, and creates a ZIP archive.
+- Sets media volume to minimum or maximum and opens a URL on the phone. Phone screenshots can be saved as PNG files or copied directly to the Windows clipboard.
+- Downloads files from `DCIM`, `Pictures`, and `Picture` either as a ZIP archive or directly into their original folder structure.
+- Folder mode can track the last complete download separately for each phone, transfer only new or modified files, and reset the checkpoint on demand.
+- Android `.thumbnails` cache folders are ignored during scanning and transfer and are not counted as errors or download results.
 - Reads remote file sizes before transfer and can skip individual files above a configurable limit (2 GB by default).
 - Supports Per-Monitor V2 high DPI, remembered window dimensions, and 4K display scaling.
 
@@ -87,8 +89,8 @@ Use the latest version from the official page. Google states that current Platfo
 
 Each GitHub Release provides two archives:
 
-- `AndroidADBTools-v2.0.2.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
-- `AndroidADBTools-v2.0.2-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.3.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.3-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
 
 1. Choose the ZIP you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases) and extract the entire archive.
 2. Run `AndroidADBTools.exe`.
@@ -115,8 +117,12 @@ Each direct child folder becomes an installation group when the app starts. APK 
 ## Phone Data Download
 
 - Scans `/sdcard/DCIM`, `/sdcard/Pictures`, and `/sdcard/Picture`.
-- Creates a path-and-size manifest on the phone before deciding which files to transfer.
-- Names archives as `DeviceModel_yyyyMMdd-HHmmss.zip`.
+- Creates a modification-time, path, and size manifest on the phone before deciding which files to transfer.
+- **ZIP archive:** performs a complete download every time and names the archive `DeviceModel_yyyyMMdd-HHmmss.zip`.
+- **Folder (preserve structure):** writes `DCIM`, `Pictures`, `Picture`, and their original directory structure directly into the selected computer destination, without adding a device-name wrapper folder or compressing the files.
+- Incremental tracking is enabled by default in folder mode. For the same phone and computer destination, later runs transfer only files added or modified after the last complete download.
+- Checkpoints are isolated between phones. Changing the computer destination triggers a first-time full download, and **Reset current phone record** forces another complete download.
+- Files intentionally skipped by the configured size limit are excluded from the failure rate. A copy failure rate of 10% or less is accepted and advances the checkpoint; a rate above 10% does not, and the app displays a warning.
 - The size filter applies to each individual file, not the total archive size.
 - Both USB and Wi-Fi ADB work; USB is recommended for large backups.
 
@@ -171,7 +177,7 @@ User settings are stored in:
 %LOCALAPPDATA%\AndroidADBTools\settings.json
 ```
 
-This includes the ADB path, last primary device, saved Wi-Fi devices and auto-reconnect preference, install-to-all-devices preference, APK groups and order, window dimensions, download destination, file-size filtering preference, `spotread` and correction paths, target nit, and tolerance.
+This includes the ADB path, last primary device, saved Wi-Fi devices and auto-reconnect preference, install-to-all-devices preference, APK groups, order, and last selected group, window dimensions, download mode and destination, per-device complete-download checkpoints, file-size filtering preference, `spotread` and correction paths, target nit, and tolerance.
 
 ## License
 

@@ -12,7 +12,7 @@
 
 一套免安裝的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.2**
+目前版本：**v2.0.3**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
@@ -31,9 +31,11 @@
 - 新增實測自動調整亮度功能：搭配 ArgyllCMS `spotread` 與外接色度計，以閉迴路反覆量測並調整 Android 亮度至目標值；原有手動模式完整保留。
 - 快速設定自動亮度、10 分鐘關屏、最長關屏時間及充電時保持螢幕開啟。
 - 各項快速設定獨立執行並讀回驗證；單項失敗不影響其他設定。
-- 快速調整媒體音量、在手機開啟網址、擷取手機畫面並儲存 PNG。
-- 下載手機 `DCIM`、`Pictures`、`Picture` 內的檔案，保留目錄結構並壓縮成 ZIP。
+- 快速調整媒體音量、在手機開啟網址；手機截圖可儲存為 PNG，或直接複製到 Windows 剪貼簿。
+- 下載手機 `DCIM`、`Pictures`、`Picture` 內的檔案，可建立 ZIP 壓縮包或直接保留原始資料夾結構。
+- 資料夾模式可依手機分別記錄上次完整下載時間，後續只傳輸新增或修改的檔案，並可手動重置紀錄。
 - 下載前先取得檔案大小，可略過超過自訂上限的單一檔案（預設 2 GB）。
+- 掃描及下載時會直接忽略 Android 的 `.thumbnails` 縮圖快取資料夾，不列入錯誤或下載統計。
 - 支援 Per-Monitor V2 高 DPI、視窗大小記憶與 4K 顯示器縮放。
 
 ## 軟體畫面
@@ -87,8 +89,8 @@
 
 GitHub Release 提供兩種壓縮包：
 
-- `AndroidADBTools-v2.0.2.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
-- `AndroidADBTools-v2.0.2-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.3.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.3-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
 
 1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的 ZIP 並完整解壓縮。
 2. 執行 `AndroidADBTools.exe`。
@@ -115,8 +117,12 @@ APKs/
 ## 手機資料下載
 
 - 掃描 `/sdcard/DCIM`、`/sdcard/Pictures` 與 `/sdcard/Picture`。
-- 在手機端先建立路徑與大小清單，再依設定決定是否傳輸。
-- ZIP 名稱格式為 `手機型號_yyyyMMdd-HHmmss.zip`。
+- 在手機端先建立修改時間、路徑與大小清單，再依設定決定是否傳輸。
+- **ZIP 壓縮包**：每次完整下載，名稱格式為 `手機型號_yyyyMMdd-HHmmss.zip`。
+- **資料夾（保留結構）**：直接在選定的電腦儲存位置建立 `DCIM`、`Pictures`、`Picture` 等原始目錄，不額外建立手機名稱資料夾，也不進行壓縮。
+- 資料夾模式預設啟用增量紀錄；同一手機、同一電腦目的地下次只下載上次完整成功後新增或修改的檔案。
+- 不同手機的紀錄彼此獨立；變更電腦目的地會視為首次下載，也可按「重置目前手機紀錄」強制重新完整下載。
+- 依大小限制正常略過的檔案不列入錯誤率。實際複製的檔案錯誤率在 10% 以下（含 10%）仍視為成功並更新完整下載時間；超過 10% 時不更新，程式會顯示警告訊息。
 - 大小上限是針對「單一檔案」，不是整個備份的總大小。
 - USB 與 Wi-Fi ADB 皆可使用；大型備份建議使用 USB。
 
@@ -171,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File .\Build.ps1
 %LOCALAPPDATA%\AndroidADBTools\settings.json
 ```
 
-內容包含 ADB 路徑、上次操作裝置、Wi-Fi 裝置紀錄與自動重連設定、是否將 APK 安裝到全部裝置、APK 組合、組合順序、視窗大小、下載位置與檔案大小過濾設定，以及 `spotread`／修正檔路徑、目標 nit 與容許誤差。
+內容包含 ADB 路徑、上次操作裝置、Wi-Fi 裝置紀錄與自動重連設定、是否將 APK 安裝到全部裝置、APK 組合、組合順序與最後選擇的組合、視窗大小、下載方式、下載位置、各手機的完整下載時間與檔案大小過濾設定，以及 `spotread`／修正檔路徑、目標 nit 與容許誤差。
 
 ## 授權
 

@@ -32,8 +32,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.2.0")]
-[assembly: AssemblyFileVersion("2.0.2.0")]
+[assembly: AssemblyVersion("2.0.3.0")]
+[assembly: AssemblyFileVersion("2.0.3.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -71,12 +71,16 @@ namespace AndroidADBTools
         public bool AllowDowngrade { get; set; }
         public List<ApkGroup> Groups { get; set; }
         public List<string> GroupOrder { get; set; }
+        public string SelectedGroupId { get; set; }
         public int WindowWidth { get; set; }
         public int WindowHeight { get; set; }
         public bool WindowMaximized { get; set; }
         public string DownloadFolder { get; set; }
         public bool SkipLargeDownloadFiles { get; set; }
         public decimal MaxDownloadFileSizeGb { get; set; }
+        public string DownloadMode { get; set; }
+        public bool? IncrementalFolderDownload { get; set; }
+        public List<DownloadCheckpoint> DownloadCheckpoints { get; set; }
         public string SelectedDeviceSerial { get; set; }
         public bool InstallToAllDevices { get; set; }
         public List<WifiDeviceRecord> WifiDevices { get; set; }
@@ -91,9 +95,13 @@ namespace AndroidADBTools
             AdbPath = "";
             Groups = new List<ApkGroup>();
             GroupOrder = new List<string>();
+            SelectedGroupId = "";
             DownloadFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Android手機資料下載");
             SkipLargeDownloadFiles = true;
             MaxDownloadFileSizeGb = 2M;
+            DownloadMode = "Zip";
+            IncrementalFolderDownload = true;
+            DownloadCheckpoints = new List<DownloadCheckpoint>();
             SelectedDeviceSerial = "";
             WifiDevices = new List<WifiDeviceRecord>();
             SpotreadPath = "";
@@ -227,6 +235,24 @@ namespace AndroidADBTools
     {
         public string Path { get; set; }
         public long Size { get; set; }
+        public long ModifiedUnixSeconds { get; set; }
+    }
+
+    public sealed class DownloadCheckpoint
+    {
+        public string DeviceKey { get; set; }
+        public string DeviceSerial { get; set; }
+        public string DeviceModel { get; set; }
+        public string DestinationFolder { get; set; }
+        public long LastCompletedUnixSeconds { get; set; }
+    }
+
+    public sealed class DownloadDeviceIdentity
+    {
+        public string Key { get; set; }
+        public string StableId { get; set; }
+        public string Serial { get; set; }
+        public string Model { get; set; }
     }
 
     public sealed class ModernTabControl : TabControl
@@ -373,9 +399,15 @@ namespace AndroidADBTools
         private Button volumeMaximumButton;
         private Button openUrlButton;
         private Button screenshotButton;
+        private Button screenshotClipboardButton;
         private TextBox downloadFolderTextBox;
         private CheckBox skipLargeDownloadCheck;
         private NumericUpDown maxDownloadSizeNumber;
+        private ComboBox downloadModeComboBox;
+        private CheckBox incrementalDownloadCheck;
+        private Label downloadCheckpointLabel;
+        private Label downloadActionHint;
+        private Button resetDownloadCheckpointButton;
         private Button browseDownloadFolderButton;
         private Button startDownloadButton;
         private Label downloadStatusLabel;
@@ -751,7 +783,16 @@ namespace AndroidADBTools
             groupList.DragOver += GroupListDragOver;
             groupList.DragDrop += GroupListDragDrop;
             groupList.DragLeave += delegate { SetGroupDragInsertIndex(-1); };
-            groupList.SelectedIndexChanged += delegate { ShowSelectedGroup(); };
+            groupList.SelectedIndexChanged += delegate
+            {
+                ShowSelectedGroup();
+                ApkGroup selected = SelectedGroup();
+                if (selected != null && !String.Equals(settings.SelectedGroupId, selected.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    settings.SelectedGroupId = selected.Id;
+                    SaveSettings();
+                }
+            };
             groupList.MouseDoubleClick += GroupListMouseDoubleClick;
             left.Controls.Add(groupList);
             groupList.BringToFront();
@@ -1645,10 +1686,11 @@ namespace AndroidADBTools
             Panel screenshotCard = new Panel { Dock = DockStyle.Fill, BackColor = Card2, Margin = new Padding(0) };
             TableLayoutPanel screenshotLayout = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
                 Padding = new Padding(10, 6, 10, 6), BackColor = Card2
             };
             screenshotLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            screenshotLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128));
             screenshotLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
             screenshotLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             TableLayoutPanel screenshotText = new TableLayoutPanel
@@ -1667,17 +1709,22 @@ namespace AndroidADBTools
             };
             Label screenshotHint = new Label
             {
-                Text = "擷取目前畫面並存成 PNG", ForeColor = Muted,
+                Text = "儲存 PNG，或直接複製到剪貼簿", ForeColor = Muted,
                 Dock = DockStyle.Fill, TextAlign = ContentAlignment.TopLeft
             };
-            screenshotButton = NewButton("截圖並儲存", true, 126);
-            screenshotButton.MinimumSize = new Size(126, 36);
+            screenshotButton = NewButton("截圖並儲存", true, 116);
+            screenshotButton.MinimumSize = new Size(116, 36);
             screenshotButton.Anchor = AnchorStyles.None;
             screenshotButton.Click += async delegate { await CaptureScreenshotAsync(); };
+            screenshotClipboardButton = NewButton("截圖到剪貼簿", true, 128);
+            screenshotClipboardButton.MinimumSize = new Size(128, 36);
+            screenshotClipboardButton.Anchor = AnchorStyles.None;
+            screenshotClipboardButton.Click += async delegate { await CaptureScreenshotToClipboardAsync(); };
             screenshotText.Controls.Add(screenshotTitle, 0, 0);
             screenshotText.Controls.Add(screenshotHint, 0, 1);
             screenshotLayout.Controls.Add(screenshotText, 0, 0);
             screenshotLayout.Controls.Add(screenshotButton, 1, 0);
+            screenshotLayout.Controls.Add(screenshotClipboardButton, 2, 0);
             screenshotCard.Controls.Add(screenshotLayout);
             toolsColumn.Controls.Add(screenshotCard, 0, 2);
 
@@ -1708,36 +1755,52 @@ namespace AndroidADBTools
 
         private void BuildDownloadTab(TabPage tab)
         {
-            TableLayoutPanel root = new TableLayoutPanel
+            Panel downloadViewport = new Panel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(28, 24, 28, 24),
+                AutoScroll = true,
+                BackColor = Card,
+                Margin = new Padding(0)
+            };
+            downloadViewport.HandleCreated += delegate
+            {
+                SetWindowTheme(downloadViewport.Handle, "DarkMode_Explorer", null);
+            };
+            tab.Controls.Add(downloadViewport);
+
+            TableLayoutPanel root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 510,
+                Padding = new Padding(18, 14, 18, 14),
                 BackColor = Card,
                 ColumnCount = 1,
-                RowCount = 4
+                RowCount = 5
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 132));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            tab.Controls.Add(root);
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 122));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
+            downloadViewport.Controls.Add(root);
+            downloadViewport.AutoScrollMinSize = new Size(0, root.Height + 12);
 
             Panel header = new Panel { Dock = DockStyle.Fill, BackColor = Card };
             Label title = new Label
             {
                 Text = "快速下載手機圖片影音資料",
                 ForeColor = TextColor,
-                Font = new Font(Font.FontFamily, 16F, FontStyle.Bold),
+                Font = new Font(Font.FontFamily, 15F, FontStyle.Bold),
                 AutoSize = true,
                 Location = new Point(0, 0)
             };
             Label hint = new Label
             {
-                Text = "下載 DCIM、Pictures 與 Picture 內的所有檔案，保留資料夾結構並壓縮成 ZIP。",
+                Text = "可下載為 ZIP 壓縮包，或直接保留 DCIM、Pictures 與 Picture 的資料夾結構。",
                 ForeColor = Muted,
                 AutoSize = true,
-                Location = new Point(2, 42)
+                Location = new Point(2, 32)
             };
             header.Controls.Add(title);
             header.Controls.Add(hint);
@@ -1747,14 +1810,14 @@ namespace AndroidADBTools
             {
                 Dock = DockStyle.Fill,
                 BackColor = Card2,
-                Padding = new Padding(18, 12, 18, 14),
-                Margin = new Padding(0, 0, 0, 12)
+                Padding = new Padding(12, 8, 12, 8),
+                Margin = new Padding(0, 0, 0, 8)
             };
             Label destinationLabel = new Label
             {
                 Text = "電腦儲存位置",
                 Dock = DockStyle.Top,
-                Height = 31,
+                Height = 25,
                 ForeColor = TextColor,
                 Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold)
             };
@@ -1791,22 +1854,54 @@ namespace AndroidADBTools
             {
                 Dock = DockStyle.Fill,
                 BackColor = Card2,
-                Padding = new Padding(18, 14, 18, 14),
-                Margin = new Padding(0, 0, 0, 12)
+                Padding = new Padding(12, 8, 12, 8),
+                Margin = new Padding(0, 0, 0, 8)
             };
             TableLayoutPanel limitLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 4,
-                RowCount = 2,
+                RowCount = 3,
                 Margin = new Padding(0)
             };
             limitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-            limitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
-            limitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 135));
+            limitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220));
+            limitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
             limitLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            limitLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
+            limitLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            limitLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             limitLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            Label modeLabel = new Label
+            {
+                Text = "下載方式",
+                ForeColor = TextColor,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left
+            };
+            downloadModeComboBox = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Bg,
+                ForeColor = TextColor,
+                FlatStyle = FlatStyle.Flat,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 4, 12, 4)
+            };
+            downloadModeComboBox.Items.AddRange(new object[]
+            {
+                "ZIP 壓縮包（完整下載）",
+                "資料夾（保留結構）"
+            });
+            downloadModeComboBox.SelectedIndex = String.Equals(settings.DownloadMode, "Folder", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            downloadModeComboBox.HandleCreated += delegate { SetWindowTheme(downloadModeComboBox.Handle, "DarkMode_Explorer", null); };
+            incrementalDownloadCheck = new CheckBox
+            {
+                Text = "記錄完整下載時間，下次只下載較新的檔案",
+                Checked = settings.IncrementalFolderDownload.GetValueOrDefault(true),
+                ForeColor = TextColor,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left
+            };
             skipLargeDownloadCheck = new CheckBox
             {
                 Text = "略過超過指定大小的單一檔案",
@@ -1834,7 +1929,7 @@ namespace AndroidADBTools
                 BorderStyle = BorderStyle.FixedSingle,
                 TextAlign = HorizontalAlignment.Right,
                 Dock = DockStyle.Fill,
-                Margin = new Padding(0, 8, 8, 8),
+                Margin = new Padding(0, 4, 8, 4),
                 Enabled = settings.SkipLargeDownloadFiles
             };
             Label unitLabel = new Label
@@ -1846,25 +1941,62 @@ namespace AndroidADBTools
             };
             Label limitHint = new Label
             {
-                Text = "程式會先讀取手機端檔案大小；超過上限的檔案不會傳輸，也不會放入壓縮檔。",
+                Text = "程式會先讀取手機端修改時間與檔案大小；超過上限的檔案不會傳輸。",
                 ForeColor = Muted,
                 AutoSize = true,
                 Anchor = AnchorStyles.Left
             };
-            limitLayout.Controls.Add(skipLargeDownloadCheck, 0, 0);
-            limitLayout.Controls.Add(sizeLabel, 1, 0);
-            limitLayout.Controls.Add(maxDownloadSizeNumber, 2, 0);
-            limitLayout.Controls.Add(unitLabel, 3, 0);
-            limitLayout.Controls.Add(limitHint, 0, 1);
+            limitLayout.Controls.Add(modeLabel, 0, 0);
+            limitLayout.Controls.Add(downloadModeComboBox, 1, 0);
+            limitLayout.Controls.Add(incrementalDownloadCheck, 2, 0);
+            limitLayout.SetColumnSpan(incrementalDownloadCheck, 2);
+            limitLayout.Controls.Add(skipLargeDownloadCheck, 0, 1);
+            limitLayout.Controls.Add(sizeLabel, 1, 1);
+            limitLayout.Controls.Add(maxDownloadSizeNumber, 2, 1);
+            limitLayout.Controls.Add(unitLabel, 3, 1);
+            limitLayout.Controls.Add(limitHint, 0, 2);
             limitLayout.SetColumnSpan(limitHint, 4);
             limitCard.Controls.Add(limitLayout);
             root.Controls.Add(limitCard, 0, 2);
+
+            Panel checkpointCard = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card2,
+                Padding = new Padding(12, 8, 12, 8),
+                Margin = new Padding(0, 0, 0, 8)
+            };
+            TableLayoutPanel checkpointLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0)
+            };
+            checkpointLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            checkpointLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+            downloadCheckpointLabel = new Label
+            {
+                Text = "增量下載紀錄：連接並選擇手機後即可自動識別。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+            resetDownloadCheckpointButton = NewButton("重置目前手機紀錄", false, 170);
+            resetDownloadCheckpointButton.Dock = DockStyle.Fill;
+            resetDownloadCheckpointButton.Margin = new Padding(8, 2, 0, 2);
+            resetDownloadCheckpointButton.Click += async delegate { await ResetCurrentDownloadCheckpointAsync(); };
+            checkpointLayout.Controls.Add(downloadCheckpointLabel, 0, 0);
+            checkpointLayout.Controls.Add(resetDownloadCheckpointButton, 1, 0);
+            checkpointCard.Controls.Add(checkpointLayout);
+            root.Controls.Add(checkpointCard, 0, 3);
 
             Panel actionCard = new Panel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Card2,
-                Padding = new Padding(18),
+                Padding = new Padding(12, 8, 12, 8),
                 Margin = new Padding(0)
             };
             TableLayoutPanel actionLayout = new TableLayoutPanel
@@ -1874,10 +2006,10 @@ namespace AndroidADBTools
                 RowCount = 4
             };
             actionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-            actionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            actionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
             downloadStatusLabel = new Label
             {
                 Text = "準備就緒",
@@ -1895,7 +2027,7 @@ namespace AndroidADBTools
                 Style = ProgressBarStyle.Continuous,
                 Margin = new Padding(0, 4, 0, 4)
             };
-            Label actionHint = new Label
+            downloadActionHint = new Label
             {
                 Text = "壓縮檔名稱會使用手機型號與日期時間，例如：Pixel_9_20260716-153000.zip",
                 ForeColor = Muted,
@@ -1908,17 +2040,17 @@ namespace AndroidADBTools
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
                 BackColor = Card2,
-                Padding = new Padding(0, 8, 0, 0)
+                Padding = new Padding(0, 4, 0, 0)
             };
             startDownloadButton = NewButton("開始下載並打包", true, 180);
             startDownloadButton.Click += async delegate { await DownloadPhoneDataAsync(); };
             actionButtons.Controls.Add(startDownloadButton);
             actionLayout.Controls.Add(downloadStatusLabel, 0, 0);
             actionLayout.Controls.Add(downloadProgressBar, 0, 1);
-            actionLayout.Controls.Add(actionHint, 0, 2);
+            actionLayout.Controls.Add(downloadActionHint, 0, 2);
             actionLayout.Controls.Add(actionButtons, 0, 3);
             actionCard.Controls.Add(actionLayout);
-            root.Controls.Add(actionCard, 0, 3);
+            root.Controls.Add(actionCard, 0, 4);
 
             skipLargeDownloadCheck.CheckedChanged += delegate
             {
@@ -1931,6 +2063,21 @@ namespace AndroidADBTools
                 settings.MaxDownloadFileSizeGb = maxDownloadSizeNumber.Value;
                 SaveSettings();
             };
+            downloadModeComboBox.SelectedIndexChanged += async delegate
+            {
+                settings.DownloadMode = downloadModeComboBox.SelectedIndex == 1 ? "Folder" : "Zip";
+                SaveSettings();
+                UpdateDownloadModeUi();
+                await RefreshDownloadCheckpointStatusAsync();
+            };
+            incrementalDownloadCheck.CheckedChanged += async delegate
+            {
+                settings.IncrementalFolderDownload = incrementalDownloadCheck.Checked;
+                SaveSettings();
+                UpdateDownloadModeUi();
+                await RefreshDownloadCheckpointStatusAsync();
+            };
+            UpdateDownloadModeUi();
         }
 
         private Panel NewCard()
@@ -2293,11 +2440,17 @@ namespace AndroidADBTools
                 int contentHeight = nameHeight + contentGap + countHeight;
                 int contentTop = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - contentHeight) / 2);
 
-                if (group != null && group.IsFolderGroup)
+                if (group != null)
                 {
                     int iconSize = ScaleValue(19, currentDpiScale);
                     int iconTop = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - iconSize) / 2);
-                    DrawFolderIcon(e.Graphics, new Rectangle(textLeft, iconTop, iconSize, iconSize));
+                    Color folderFill = group.IsFolderGroup
+                        ? Color.FromArgb(255, 190, 75)
+                        : Color.FromArgb(86, 166, 255);
+                    Color folderEdge = group.IsFolderGroup
+                        ? Color.FromArgb(205, 132, 33)
+                        : Color.FromArgb(34, 105, 190);
+                    DrawFolderIcon(e.Graphics, new Rectangle(textLeft, iconTop, iconSize, iconSize), folderFill, folderEdge);
                     textLeft += iconSize + ScaleValue(9, currentDpiScale);
                 }
 
@@ -2479,12 +2632,10 @@ namespace AndroidADBTools
             RefreshGroups(selected.Id);
         }
 
-        private static void DrawFolderIcon(Graphics graphics, Rectangle bounds)
+        private static void DrawFolderIcon(Graphics graphics, Rectangle bounds, Color fill, Color edge)
         {
             if (bounds.Width < 4 || bounds.Height < 4) return;
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Color fill = Color.FromArgb(255, 190, 75);
-            Color edge = Color.FromArgb(205, 132, 33);
             int tabWidth = Math.Max(3, bounds.Width / 2);
             int tabHeight = Math.Max(2, bounds.Height / 4);
             Rectangle tab = new Rectangle(bounds.Left + 1, bounds.Top + 1, tabWidth, tabHeight + 2);
@@ -2525,7 +2676,11 @@ namespace AndroidADBTools
                     {
                         if (loaded.Groups == null) loaded.Groups = new List<ApkGroup>();
                         if (loaded.GroupOrder == null) loaded.GroupOrder = new List<string>();
+                        if (loaded.SelectedGroupId == null) loaded.SelectedGroupId = "";
                         if (loaded.WifiDevices == null) loaded.WifiDevices = new List<WifiDeviceRecord>();
+                        if (loaded.DownloadCheckpoints == null) loaded.DownloadCheckpoints = new List<DownloadCheckpoint>();
+                        if (String.IsNullOrWhiteSpace(loaded.DownloadMode)) loaded.DownloadMode = "Zip";
+                        if (!loaded.IncrementalFolderDownload.HasValue) loaded.IncrementalFolderDownload = true;
                         if (loaded.AutoBrightnessTargetNit <= 0) loaded.AutoBrightnessTargetNit = 200M;
                         if (loaded.AutoBrightnessToleranceNit <= 0) loaded.AutoBrightnessToleranceNit = 2M;
                         if (String.IsNullOrWhiteSpace(loaded.DownloadFolder))
@@ -2670,14 +2825,15 @@ namespace AndroidADBTools
             });
         }
 
-        private async Task<AdbResult> RunAdbToFileAsync(string arguments, string outputPath)
+        private async Task<Tuple<AdbResult, byte[]>> RunAdbToBytesAsync(string arguments)
         {
             string adb = FindAdb();
             if (String.IsNullOrWhiteSpace(adb))
-                return new AdbResult { Started = false, ExitCode = -1, Error = "找不到 adb.exe" };
+                return Tuple.Create(new AdbResult { Started = false, ExitCode = -1, Error = "找不到 adb.exe" }, new byte[0]);
             return await Task.Run(delegate
             {
                 AdbResult result = new AdbResult();
+                byte[] data = new byte[0];
                 try
                 {
                     ProcessStartInfo psi = new ProcessStartInfo
@@ -2694,8 +2850,11 @@ namespace AndroidADBTools
                     {
                         result.Started = true;
                         Task<string> errorTask = process.StandardError.ReadToEndAsync();
-                        using (FileStream file = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                            process.StandardOutput.BaseStream.CopyTo(file);
+                        using (MemoryStream memory = new MemoryStream())
+                        {
+                            process.StandardOutput.BaseStream.CopyTo(memory);
+                            data = memory.ToArray();
+                        }
                         process.WaitForExit();
                         result.Error = errorTask.Result;
                         result.ExitCode = process.ExitCode;
@@ -2707,8 +2866,56 @@ namespace AndroidADBTools
                     result.ExitCode = -1;
                     result.Error = ex.Message;
                 }
-                return result;
+                return Tuple.Create(result, data);
             });
+        }
+
+        private async Task<Tuple<AdbResult, byte[]>> CaptureDeviceScreenshotAsync(DeviceInfo device)
+        {
+            string prefix = "-s " + Quote(device.Serial) + " ";
+            Tuple<AdbResult, byte[]> direct = await RunAdbToBytesAsync(prefix + "exec-out screencap -p");
+            if (AdbCommandSucceeded(direct.Item1) && IsPngData(direct.Item2)) return direct;
+
+            string directDetail = CleanOutput((direct.Item1.Output ?? "") + " " + (direct.Item1.Error ?? ""));
+            Log("ADB 直接截圖未取得有效 PNG（" + direct.Item2.Length + " bytes），改用裝置暫存擷取。" +
+                (String.IsNullOrWhiteSpace(directDetail) ? "" : " " + directDetail));
+
+            string token = Guid.NewGuid().ToString("N");
+            string remotePath = "/data/local/tmp/androidadbtools_screenshot_" + token + ".png";
+            string localPath = Path.Combine(Path.GetTempPath(), "androidadbtools_screenshot_" + token + ".png");
+            AdbResult fallbackResult = new AdbResult { Started = false, ExitCode = -1 };
+            byte[] fallbackData = new byte[0];
+            try
+            {
+                AdbResult capture = await RunAdbAsync(prefix + "shell screencap -p " + remotePath);
+                if (!AdbCommandSucceeded(capture))
+                {
+                    fallbackResult = capture;
+                }
+                else
+                {
+                    fallbackResult = await RunAdbAsync(prefix + "pull " + Quote(remotePath) + " " + Quote(localPath));
+                    if (AdbCommandSucceeded(fallbackResult) && File.Exists(localPath))
+                        fallbackData = File.ReadAllBytes(localPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                fallbackResult = new AdbResult { Started = false, ExitCode = -1, Error = ex.Message };
+            }
+
+            try { await RunAdbAsync(prefix + "shell rm -f " + remotePath); } catch { }
+            try { if (File.Exists(localPath)) File.Delete(localPath); } catch { }
+
+            if (!IsPngData(fallbackData))
+            {
+                string fallbackDetail = CleanOutput((fallbackResult.Output ?? "") + " " + (fallbackResult.Error ?? ""));
+                fallbackResult.Error = "直接擷取：" + direct.Item2.Length + " bytes" +
+                    (String.IsNullOrWhiteSpace(directDetail) ? "" : "，" + directDetail) +
+                    "；備援擷取：" + fallbackData.Length + " bytes" +
+                    (String.IsNullOrWhiteSpace(fallbackDetail) ? "" : "，" + fallbackDetail);
+            }
+            return Tuple.Create(fallbackResult, fallbackData);
         }
 
         private async Task CheckConnectionAsync()
@@ -2754,6 +2961,7 @@ namespace AndroidADBTools
             }
             busy = false;
             refreshButton.Enabled = true;
+            await RefreshDownloadCheckpointStatusAsync();
         }
 
         private List<DeviceInfo> ParseDevices(string output)
@@ -2813,7 +3021,7 @@ namespace AndroidADBTools
             }
         }
 
-        private void DeviceSelectorChanged(object sender, EventArgs e)
+        private async void DeviceSelectorChanged(object sender, EventArgs e)
         {
             if (updatingDeviceSelector) return;
             DeviceInfo selected = deviceSelector == null ? null : deviceSelector.SelectedItem as DeviceInfo;
@@ -2821,6 +3029,7 @@ namespace AndroidADBTools
             settings.SelectedDeviceSerial = selected.Serial;
             SaveSettings();
             UpdateDeviceSelectionDetail();
+            await RefreshDownloadCheckpointStatusAsync();
         }
 
         private void DeviceInstallSelectionChanged(object sender, EventArgs e)
@@ -3928,7 +4137,7 @@ namespace AndroidADBTools
 
         private void RefreshGroups()
         {
-            RefreshGroups(null);
+            RefreshGroups(settings.SelectedGroupId);
         }
 
         private ApkGroup SelectedGroup()
@@ -5177,10 +5386,23 @@ namespace AndroidADBTools
             busy = true;
             SetInstallButtons(false);
             Log("正在擷取手機畫面：" + outputPath);
-            AdbResult result = await RunAdbToFileAsync("-s " + Quote(device.Serial) + " exec-out screencap -p", outputPath);
-            bool ok = AdbCommandSucceeded(result) && IsPngFile(outputPath);
-            busy = false;
-            SetInstallButtons(true);
+            Tuple<AdbResult, byte[]> capture = await CaptureDeviceScreenshotAsync(device);
+            AdbResult result = capture.Item1;
+            bool ok = AdbCommandSucceeded(result) && IsPngData(capture.Item2);
+            try
+            {
+                if (ok) File.WriteAllBytes(outputPath, capture.Item2);
+            }
+            catch (Exception ex)
+            {
+                ok = false;
+                result.Error = ex.Message;
+            }
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+            }
             if (ok)
             {
                 Log("手機截圖已儲存：" + outputPath);
@@ -5190,6 +5412,7 @@ namespace AndroidADBTools
             {
                 try { if (File.Exists(outputPath)) File.Delete(outputPath); } catch { }
                 string detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                if (String.IsNullOrWhiteSpace(detail)) detail = "ADB 未回傳有效的 PNG 圖片。";
                 Log("手機截圖失敗：" + detail);
                 MessageBox.Show(this, "無法擷取手機畫面。\n\n" + detail, "截圖失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -5199,7 +5422,7 @@ namespace AndroidADBTools
         {
             using (FolderBrowserDialog dialog = new FolderBrowserDialog())
             {
-                dialog.Description = "選擇手機資料壓縮檔的儲存位置";
+                dialog.Description = "選擇手機資料的儲存位置";
                 dialog.ShowNewFolderButton = true;
                 if (!String.IsNullOrWhiteSpace(settings.DownloadFolder) && Directory.Exists(settings.DownloadFolder))
                     dialog.SelectedPath = settings.DownloadFolder;
@@ -5207,7 +5430,227 @@ namespace AndroidADBTools
                 settings.DownloadFolder = dialog.SelectedPath;
                 downloadFolderTextBox.Text = dialog.SelectedPath;
                 SaveSettings();
+                BeginInvoke(new Action(async delegate { await RefreshDownloadCheckpointStatusAsync(); }));
             }
+        }
+
+        private async Task CaptureScreenshotToClipboardAsync()
+        {
+            if (busy) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+
+            busy = true;
+            SetInstallButtons(false);
+            try
+            {
+                Log("正在擷取手機畫面到 Windows 剪貼簿...");
+                Tuple<AdbResult, byte[]> capture = await CaptureDeviceScreenshotAsync(device);
+                AdbResult result = capture.Item1;
+                if (!AdbCommandSucceeded(result) || !IsPngData(capture.Item2))
+                {
+                    string detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                    if (String.IsNullOrWhiteSpace(detail)) detail = "ADB 未回傳有效的 PNG 圖片。";
+                    throw new InvalidOperationException(detail);
+                }
+
+                using (MemoryStream stream = new MemoryStream(capture.Item2, false))
+                using (Image source = Image.FromStream(stream))
+                using (Bitmap bitmap = new Bitmap(source))
+                {
+                    Exception clipboardError = null;
+                    for (int attempt = 0; attempt < 3; attempt++)
+                    {
+                        try
+                        {
+                            Clipboard.SetDataObject(bitmap, true);
+                            clipboardError = null;
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            clipboardError = ex;
+                        }
+                        if (clipboardError != null && attempt < 2) await Task.Delay(120);
+                    }
+                    if (clipboardError != null) throw new InvalidOperationException("Windows 剪貼簿目前無法使用。", clipboardError);
+                }
+
+                Log("手機截圖已複製到 Windows 剪貼簿。");
+                MessageBox.Show(this, "手機截圖已複製到 Windows 剪貼簿。", "截圖完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Log("截圖到剪貼簿失敗：" + ex.Message);
+                MessageBox.Show(this, "無法將手機截圖複製到 Windows 剪貼簿。\n\n" + ex.Message,
+                    "截圖失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+            }
+        }
+
+        private void UpdateDownloadModeUi()
+        {
+            bool folderMode = downloadModeComboBox != null && downloadModeComboBox.SelectedIndex == 1;
+            if (incrementalDownloadCheck != null) incrementalDownloadCheck.Enabled = folderMode && !busy;
+            if (resetDownloadCheckpointButton != null) resetDownloadCheckpointButton.Enabled = folderMode && !busy;
+            if (startDownloadButton != null)
+                startDownloadButton.Text = folderMode ? "開始下載到資料夾" : "開始下載並打包";
+            if (downloadActionHint != null)
+                downloadActionHint.Text = folderMode
+                    ? "直接保存原始結構；複製錯誤率 10% 以下仍會更新此手機的增量下載時間。"
+                    : "壓縮檔名稱會使用手機型號與日期時間，例如：Pixel_9_20260716-153000.zip";
+            if (!folderMode && downloadCheckpointLabel != null)
+                downloadCheckpointLabel.Text = "ZIP 模式每次都會完整掃描與下載，不使用增量時間紀錄。";
+            else if (folderMode && downloadCheckpointLabel != null &&
+                downloadCheckpointLabel.Text.StartsWith("ZIP 模式", StringComparison.Ordinal))
+                downloadCheckpointLabel.Text = "增量下載紀錄：開始下載時會自動識別目前手機。";
+        }
+
+        private async Task<DownloadDeviceIdentity> ReadDownloadDeviceIdentityAsync(DeviceInfo device)
+        {
+            AdbResult serialResult = await RunAdbAsync("-s " + Quote(device.Serial) + " shell getprop ro.serialno");
+            string stableId = FirstOutputLine(serialResult.Output);
+            if (String.IsNullOrWhiteSpace(stableId) || String.Equals(stableId, "unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                AdbResult androidIdResult = await RunAdbAsync("-s " + Quote(device.Serial) + " shell settings get secure android_id");
+                stableId = FirstOutputLine(androidIdResult.Output);
+            }
+            if (String.IsNullOrWhiteSpace(stableId) || String.Equals(stableId, "null", StringComparison.OrdinalIgnoreCase))
+                stableId = device.Serial ?? "unknown-device";
+            string model = await ReadDeviceDisplayNameAsync(device);
+            return new DownloadDeviceIdentity
+            {
+                StableId = stableId.Trim(),
+                Serial = device.Serial ?? "",
+                Model = model,
+                Key = (model + "|" + stableId.Trim()).ToUpperInvariant()
+            };
+        }
+
+        private async Task RefreshDownloadCheckpointStatusAsync()
+        {
+            if (downloadCheckpointLabel == null || downloadModeComboBox == null) return;
+            if (downloadModeComboBox.SelectedIndex != 1)
+            {
+                downloadCheckpointLabel.Text = "ZIP 模式每次都會完整掃描與下載，不使用增量時間紀錄。";
+                return;
+            }
+            DeviceInfo device = ReadyDevice();
+            if (device == null)
+            {
+                downloadCheckpointLabel.Text = "增量下載紀錄：尚未連接可操作的手機。";
+                return;
+            }
+            if (incrementalDownloadCheck != null && !incrementalDownloadCheck.Checked)
+            {
+                downloadCheckpointLabel.Text = device.DisplayName + "：增量下載紀錄已停用。";
+                return;
+            }
+            try
+            {
+                downloadCheckpointLabel.Text = "正在識別手機與下載紀錄...";
+                DownloadDeviceIdentity identity = await ReadDownloadDeviceIdentityAsync(device);
+                DownloadCheckpoint checkpoint = FindDownloadCheckpoint(identity,
+                    downloadFolderTextBox == null ? settings.DownloadFolder : downloadFolderTextBox.Text);
+                downloadCheckpointLabel.Text = identity.Model + "：" +
+                    (checkpoint == null ? "尚無完整下載紀錄，下次將完整下載。" :
+                    "最近完整下載 " + FormatDownloadCheckpoint(checkpoint.LastCompletedUnixSeconds));
+            }
+            catch (Exception ex)
+            {
+                downloadCheckpointLabel.Text = "無法讀取目前手機的增量下載紀錄。";
+                Log("讀取增量下載紀錄失敗：" + ex.Message);
+            }
+        }
+
+        private async Task<long> ReadDeviceUnixTimeAsync(DeviceInfo device)
+        {
+            AdbResult result = await RunAdbAsync("-s " + Quote(device.Serial) + " shell date +%s");
+            long unixSeconds;
+            if (Int64.TryParse(FirstOutputLine(result.Output), out unixSeconds) && unixSeconds > 0) return unixSeconds;
+            return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        }
+
+        private static string NormalizeDownloadDestination(string path)
+        {
+            try
+            {
+                return Path.GetFullPath(path ?? "").TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch { return (path ?? "").Trim(); }
+        }
+
+        private DownloadCheckpoint FindDownloadCheckpoint(DownloadDeviceIdentity identity, string destinationFolder)
+        {
+            if (identity == null || settings.DownloadCheckpoints == null) return null;
+            string normalizedDestination = NormalizeDownloadDestination(destinationFolder);
+            return settings.DownloadCheckpoints.FirstOrDefault(delegate(DownloadCheckpoint checkpoint)
+            {
+                return checkpoint != null &&
+                    String.Equals(checkpoint.DeviceKey, identity.Key, StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(NormalizeDownloadDestination(checkpoint.DestinationFolder), normalizedDestination, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private void SaveDownloadCheckpoint(DownloadDeviceIdentity identity, string destinationFolder, long completedUnixSeconds)
+        {
+            if (settings.DownloadCheckpoints == null) settings.DownloadCheckpoints = new List<DownloadCheckpoint>();
+            string normalizedDestination = NormalizeDownloadDestination(destinationFolder);
+            settings.DownloadCheckpoints.RemoveAll(delegate(DownloadCheckpoint checkpoint)
+            {
+                return checkpoint != null &&
+                    String.Equals(checkpoint.DeviceKey, identity.Key, StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(NormalizeDownloadDestination(checkpoint.DestinationFolder), normalizedDestination, StringComparison.OrdinalIgnoreCase);
+            });
+            settings.DownloadCheckpoints.Add(new DownloadCheckpoint
+            {
+                DeviceKey = identity.Key,
+                DeviceSerial = identity.StableId,
+                DeviceModel = identity.Model,
+                DestinationFolder = normalizedDestination,
+                LastCompletedUnixSeconds = completedUnixSeconds
+            });
+            SaveSettings();
+        }
+
+        private static string FormatDownloadCheckpoint(long unixSeconds)
+        {
+            if (unixSeconds <= 0) return "尚無完整下載紀錄";
+            try { return DateTimeOffset.FromUnixTimeSeconds(unixSeconds).ToLocalTime().ToString("yyyy/MM/dd HH:mm:ss"); }
+            catch { return "時間紀錄無效"; }
+        }
+
+        private async Task ResetCurrentDownloadCheckpointAsync()
+        {
+            if (busy) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            DownloadDeviceIdentity identity = await ReadDownloadDeviceIdentityAsync(device);
+            int count = settings.DownloadCheckpoints == null ? 0 : settings.DownloadCheckpoints.Count(delegate(DownloadCheckpoint checkpoint)
+            {
+                return checkpoint != null && String.Equals(checkpoint.DeviceKey, identity.Key, StringComparison.OrdinalIgnoreCase);
+            });
+            if (count == 0)
+            {
+                downloadCheckpointLabel.Text = identity.Model + "：尚無可重置的完整下載紀錄。";
+                return;
+            }
+            if (MessageBox.Show(this,
+                "確定重置「" + identity.Model + "」的全部增量下載時間紀錄？\n下次資料夾下載將重新完整下載所有檔案。",
+                "重置下載紀錄", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            settings.DownloadCheckpoints.RemoveAll(delegate(DownloadCheckpoint checkpoint)
+            {
+                return checkpoint != null && String.Equals(checkpoint.DeviceKey, identity.Key, StringComparison.OrdinalIgnoreCase);
+            });
+            SaveSettings();
+            downloadCheckpointLabel.Text = identity.Model + "：紀錄已重置，下次將執行完整下載。";
+            Log("已重置手機 " + identity.Model + "（" + identity.StableId + "）的增量下載紀錄。");
         }
 
         private async Task DownloadPhoneDataAsync()
@@ -5236,6 +5679,10 @@ namespace AndroidADBTools
             settings.DownloadFolder = outputFolder;
             settings.SkipLargeDownloadFiles = skipLargeDownloadCheck.Checked;
             settings.MaxDownloadFileSizeGb = maxDownloadSizeNumber.Value;
+            bool folderMode = downloadModeComboBox != null && downloadModeComboBox.SelectedIndex == 1;
+            bool incrementalMode = folderMode && incrementalDownloadCheck != null && incrementalDownloadCheck.Checked;
+            settings.DownloadMode = folderMode ? "Folder" : "Zip";
+            settings.IncrementalFolderDownload = incrementalDownloadCheck == null || incrementalDownloadCheck.Checked;
             SaveSettings();
 
             busy = true;
@@ -5243,43 +5690,109 @@ namespace AndroidADBTools
             SetDownloadBusy(true);
             string temporaryFolder = Path.Combine(Path.GetTempPath(), "AndroidADBTools", Guid.NewGuid().ToString("N"));
             string zipPath = "";
+            string finalFolder = "";
+            long scanStartedUnixSeconds = 0;
             try
             {
+                DownloadDeviceIdentity identity = await ReadDownloadDeviceIdentityAsync(device);
+                scanStartedUnixSeconds = await ReadDeviceUnixTimeAsync(device);
+                DownloadCheckpoint checkpoint = incrementalMode ? FindDownloadCheckpoint(identity, outputFolder) : null;
+                long previousCheckpoint = checkpoint == null ? 0 : checkpoint.LastCompletedUnixSeconds;
+                if (downloadCheckpointLabel != null)
+                {
+                    downloadCheckpointLabel.Text = incrementalMode
+                        ? identity.Model + "：" + FormatDownloadCheckpoint(previousCheckpoint)
+                        : (folderMode ? identity.Model + "：本次不使用增量時間紀錄。" : "ZIP 模式每次都會完整下載。 ");
+                }
                 downloadStatusLabel.Text = "正在掃描手機檔案與大小...";
                 downloadProgressBar.Style = ProgressBarStyle.Marquee;
                 downloadProgressBar.MarqueeAnimationSpeed = 24;
-                Log("開始掃描手機的 DCIM、Pictures 與 Picture 資料夾。");
+                Log("開始掃描手機 " + identity.Model + "（" + identity.StableId + "）的 DCIM、Pictures 與 Picture 資料夾。" +
+                    (incrementalMode && previousCheckpoint > 0 ? " 上次完整下載：" + FormatDownloadCheckpoint(previousCheckpoint) + "。" : ""));
 
                 List<RemoteFileInfo> remoteFiles = await ReadPhoneMediaFilesAsync(device);
                 if (remoteFiles.Count == 0)
                 {
                     downloadStatusLabel.Text = "找不到可下載的相片或截圖檔案";
+                    if (incrementalMode)
+                    {
+                        SaveDownloadCheckpoint(identity, outputFolder, scanStartedUnixSeconds);
+                        downloadCheckpointLabel.Text = identity.Model + "：完整掃描時間已記錄為 " + FormatDownloadCheckpoint(scanStartedUnixSeconds);
+                    }
                     MessageBox.Show(this, "手機的 DCIM、Pictures 與 Picture 資料夾內沒有找到可讀取的檔案。", "沒有檔案", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
+                List<RemoteFileInfo> timeSelectedFiles = remoteFiles.Where(delegate(RemoteFileInfo file)
+                {
+                    return !incrementalMode || previousCheckpoint <= 0 ||
+                        file.ModifiedUnixSeconds <= 0 || file.ModifiedUnixSeconds >= previousCheckpoint;
+                }).ToList();
+                int skippedByTime = remoteFiles.Count - timeSelectedFiles.Count;
+                if (timeSelectedFiles.Count == 0)
+                {
+                    if (incrementalMode)
+                    {
+                        SaveDownloadCheckpoint(identity, outputFolder, scanStartedUnixSeconds);
+                        downloadCheckpointLabel.Text = identity.Model + "：最近完整下載 " + FormatDownloadCheckpoint(scanStartedUnixSeconds);
+                    }
+                    downloadProgressBar.Style = ProgressBarStyle.Continuous;
+                    downloadProgressBar.MarqueeAnimationSpeed = 0;
+                    downloadProgressBar.Value = 100;
+                    downloadStatusLabel.Text = "沒有上次紀錄之後的新檔案";
+                    Log("增量掃描完成：沒有新檔案，略過先前已記錄的 " + skippedByTime + " 個檔案。");
+                    MessageBox.Show(this, "此手機在上次完整下載時間之後沒有新增或修改的檔案。", "沒有新檔案", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
                 long maximumBytes = (long)(maxDownloadSizeNumber.Value * 1024M * 1024M * 1024M);
-                List<RemoteFileInfo> selectedFiles = remoteFiles.Where(delegate(RemoteFileInfo file)
+                List<RemoteFileInfo> selectedFiles = timeSelectedFiles.Where(delegate(RemoteFileInfo file)
                 {
                     return !skipLargeDownloadCheck.Checked || file.Size <= maximumBytes;
                 }).ToList();
-                List<RemoteFileInfo> skippedFiles = remoteFiles.Except(selectedFiles).ToList();
+                List<RemoteFileInfo> skippedFiles = timeSelectedFiles.Except(selectedFiles).ToList();
                 long selectedBytes = selectedFiles.Sum(delegate(RemoteFileInfo file) { return file.Size; });
                 long skippedBytes = skippedFiles.Sum(delegate(RemoteFileInfo file) { return file.Size; });
-                Log("掃描完成：共 " + remoteFiles.Count + " 個檔案，準備下載 " + selectedFiles.Count + " 個（" + FormatBytes(selectedBytes) + "）。");
+                Log("掃描完成：共 " + remoteFiles.Count + " 個檔案，依時間略過 " + skippedByTime + " 個，準備下載 " + selectedFiles.Count + " 個（" + FormatBytes(selectedBytes) + "）。");
                 if (skippedFiles.Count > 0)
                     Log("依大小限制略過 " + skippedFiles.Count + " 個檔案（" + FormatBytes(skippedBytes) + "）。");
 
                 if (selectedFiles.Count == 0)
                 {
-                    downloadStatusLabel.Text = "所有檔案都超過設定上限";
+                    downloadProgressBar.Style = ProgressBarStyle.Continuous;
+                    downloadProgressBar.MarqueeAnimationSpeed = 0;
+                    downloadProgressBar.Maximum = 100;
+                    downloadProgressBar.Value = 100;
+                    downloadStatusLabel.Text = "完成：所有檔案均依大小規則略過";
+                    if (incrementalMode)
+                    {
+                        SaveDownloadCheckpoint(identity, outputFolder, scanStartedUnixSeconds);
+                        downloadCheckpointLabel.Text = identity.Model + "：最近完整下載 " + FormatDownloadCheckpoint(scanStartedUnixSeconds);
+                        Log("所有待處理檔案均依大小規則略過，已更新增量下載時間紀錄：" + FormatDownloadCheckpoint(scanStartedUnixSeconds));
+                    }
+                    else
+                    {
+                        Log("所有待處理檔案均依大小規則略過，掃描已完整成功。");
+                    }
                     MessageBox.Show(this,
-                        "找到 " + remoteFiles.Count + " 個檔案，但全部超過 " + maxDownloadSizeNumber.Value.ToString("0.0") + " GB 上限，因此沒有進行傳輸。",
-                        "全部略過", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        "找到 " + timeSelectedFiles.Count + " 個待下載檔案，但全部超過 " + maxDownloadSizeNumber.Value.ToString("0.0") + " GB 上限，因此已依設定略過。\n\n此次掃描視為完整成功。" +
+                        (incrementalMode ? "\n已更新此手機的完整下載時間。" : ""),
+                        "依規則完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
-                Directory.CreateDirectory(temporaryFolder);
+                string transferFolder;
+                if (folderMode)
+                {
+                    finalFolder = outputFolder;
+                    Directory.CreateDirectory(finalFolder);
+                    transferFolder = finalFolder;
+                }
+                else
+                {
+                    Directory.CreateDirectory(temporaryFolder);
+                    transferFolder = temporaryFolder;
+                }
                 downloadProgressBar.Style = ProgressBarStyle.Continuous;
                 downloadProgressBar.MarqueeAnimationSpeed = 0;
                 downloadProgressBar.Minimum = 0;
@@ -5294,7 +5807,7 @@ namespace AndroidADBTools
                     try
                     {
                         string relativePath = MakeSafeMediaRelativePath(file.Path);
-                        string localPath = Path.Combine(temporaryFolder, relativePath);
+                        string localPath = Path.Combine(transferFolder, relativePath);
                         string localFolder = Path.GetDirectoryName(localPath);
                         if (!String.IsNullOrWhiteSpace(localFolder)) Directory.CreateDirectory(localFolder);
                         downloadStatusLabel.Text = "下載中 " + (i + 1) + " / " + selectedFiles.Count + "：" + Path.GetFileName(relativePath);
@@ -5318,41 +5831,75 @@ namespace AndroidADBTools
                 if (downloaded == 0)
                 {
                     downloadStatusLabel.Text = "檔案下載失敗";
-                    MessageBox.Show(this, "所有檔案都下載失敗，未建立壓縮檔。請查看執行紀錄。", "下載失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(this, "所有檔案都下載失敗（傳輸錯誤率 100%），下載時間紀錄不會更新。請查看執行紀錄。", "下載失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                string deviceName = await ReadDeviceDisplayNameAsync(device);
-                string zipName = SanitizeWindowsName(deviceName) + "_" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip";
-                zipPath = GetUniqueFilePath(Path.Combine(outputFolder, zipName));
-                downloadStatusLabel.Text = "正在建立壓縮檔...";
-                downloadProgressBar.Style = ProgressBarStyle.Marquee;
-                downloadProgressBar.MarqueeAnimationSpeed = 24;
-                await Task.Run(delegate
+                double transferFailureRate = selectedFiles.Count == 0 ? 0D : failed / (double)selectedFiles.Count;
+                bool transferWithinTolerance = transferFailureRate <= 0.10D;
+                string transferFailurePercent = (transferFailureRate * 100D).ToString("0.0") + "%";
+
+                string resultPath;
+                if (!folderMode)
                 {
-                    ZipFile.CreateFromDirectory(temporaryFolder, zipPath, CompressionLevel.Optimal, false);
-                });
+                    string zipName = SanitizeWindowsName(identity.Model) + "_" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".zip";
+                    zipPath = GetUniqueFilePath(Path.Combine(outputFolder, zipName));
+                    downloadStatusLabel.Text = "正在建立壓縮檔...";
+                    downloadProgressBar.Style = ProgressBarStyle.Marquee;
+                    downloadProgressBar.MarqueeAnimationSpeed = 24;
+                    await Task.Run(delegate
+                    {
+                        ZipFile.CreateFromDirectory(temporaryFolder, zipPath, CompressionLevel.Optimal, false);
+                    });
+                    resultPath = zipPath;
+                }
+                else
+                {
+                    resultPath = finalFolder;
+                    if (incrementalMode && transferWithinTolerance)
+                    {
+                        SaveDownloadCheckpoint(identity, outputFolder, scanStartedUnixSeconds);
+                        downloadCheckpointLabel.Text = identity.Model + "：最近完整下載 " + FormatDownloadCheckpoint(scanStartedUnixSeconds);
+                        Log("傳輸錯誤率 " + transferFailurePercent + "，在 10% 容許範圍內；已更新增量下載時間紀錄：" + FormatDownloadCheckpoint(scanStartedUnixSeconds));
+                    }
+                    else if (incrementalMode)
+                    {
+                        downloadCheckpointLabel.Text = identity.Model + "：傳輸錯誤率 " + transferFailurePercent + "，未更新時間紀錄。";
+                        Log("傳輸錯誤率 " + transferFailurePercent + "，超過 10%；未更新增量下載時間紀錄。");
+                    }
+                }
 
                 downloadProgressBar.Style = ProgressBarStyle.Continuous;
                 downloadProgressBar.MarqueeAnimationSpeed = 0;
                 downloadProgressBar.Maximum = 100;
                 downloadProgressBar.Value = 100;
-                downloadStatusLabel.Text = "完成：" + Path.GetFileName(zipPath);
-                Log("手機資料下載完成：" + zipPath);
+                downloadStatusLabel.Text = transferWithinTolerance
+                    ? "完成：" + Path.GetFileName(resultPath)
+                    : "未完整成功：傳輸錯誤率 " + transferFailurePercent;
+                Log("手機資料下載完成：" + resultPath);
+                string checkpointMessage = "";
+                if (folderMode && incrementalMode)
+                    checkpointMessage = transferWithinTolerance
+                        ? "\n傳輸錯誤率在 10% 以下，已記錄完整下載時間。"
+                        : "\n傳輸錯誤率超過 10%，未記錄完整下載時間。";
+                else if (!transferWithinTolerance)
+                    checkpointMessage = "\n傳輸錯誤率超過 10%，此次不視為完整成功。";
                 MessageBox.Show(this,
-                    "手機資料已下載並打包完成。\n\n下載成功：" + downloaded + " 個\n依大小略過：" + skippedFiles.Count + " 個" +
-                    (failed > 0 ? "\n下載失敗：" + failed + " 個" : "") + "\n\n" + zipPath,
-                    "資料下載完成", MessageBoxButtons.OK, failed == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+                    (folderMode ? "手機資料已下載到資料夾並保留原始結構。" : "手機資料已下載並打包完成。") +
+                    "\n\n下載成功：" + downloaded + " 個\n依時間略過：" + skippedByTime + " 個\n依大小略過：" + skippedFiles.Count + " 個" +
+                    "\n下載失敗：" + failed + " 個\n傳輸錯誤率：" + transferFailurePercent + checkpointMessage + "\n\n" + resultPath,
+                    transferWithinTolerance ? "資料下載完成" : "資料下載未完整成功",
+                    MessageBoxButtons.OK, transferWithinTolerance ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
-                downloadStatusLabel.Text = "下載或打包失敗";
+                downloadStatusLabel.Text = "資料下載失敗";
                 Log("手機資料下載失敗：" + ex.Message);
                 if (!String.IsNullOrWhiteSpace(zipPath))
                 {
                     try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
                 }
-                MessageBox.Show(this, "下載或建立壓縮檔時發生錯誤。\n\n" + ex.Message, "資料下載失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "下載手機資料時發生錯誤，時間紀錄不會更新。\n\n" + ex.Message, "資料下載失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally
             {
@@ -5379,7 +5926,7 @@ namespace AndroidADBTools
             {
                 string command = ": > " + remoteManifest + "; " +
                     "for d in /sdcard/DCIM /sdcard/Pictures /sdcard/Picture; do " +
-                    "if [ -d \"$d\" ]; then find \"$d\" -type f -exec stat -c \"%s|%n\" {} \\; >> " + remoteManifest + "; fi; done; echo READY";
+                    "if [ -d \"$d\" ]; then find \"$d\" -type d -name .thumbnails -prune -o -type f -exec stat -c \"%Y|%s|%n\" {} \\; >> " + remoteManifest + "; fi; done; echo READY";
                 AdbResult scan = await RunAdbWithConnectionRetryAsync("-s " + Quote(device.Serial) + " shell " + Quote(command));
                 string scanText = ((scan.Output ?? "") + " " + (scan.Error ?? "")).Trim();
                 if (!scan.Started || scan.ExitCode != 0 || scanText.IndexOf("READY", StringComparison.OrdinalIgnoreCase) < 0)
@@ -5394,14 +5941,25 @@ namespace AndroidADBTools
                 foreach (string rawLine in output.Replace("\r", "").Split('\n'))
                 {
                     string line = rawLine.Trim();
-                    int separator = line.IndexOf('|');
-                    if (separator <= 0 || separator >= line.Length - 1) continue;
+                    int firstSeparator = line.IndexOf('|');
+                    int secondSeparator = firstSeparator < 0 ? -1 : line.IndexOf('|', firstSeparator + 1);
+                    if (firstSeparator <= 0 || secondSeparator <= firstSeparator + 1 || secondSeparator >= line.Length - 1) continue;
+                    long modifiedUnixSeconds;
                     long size;
-                    if (!Int64.TryParse(line.Substring(0, separator), out size)) continue;
-                    string path = line.Substring(separator + 1).Trim();
+                    if (!Int64.TryParse(line.Substring(0, firstSeparator), out modifiedUnixSeconds)) continue;
+                    if (!Int64.TryParse(line.Substring(firstSeparator + 1, secondSeparator - firstSeparator - 1), out size)) continue;
+                    string path = line.Substring(secondSeparator + 1).Trim();
                     if (!path.StartsWith("/sdcard/", StringComparison.Ordinal) &&
                         !path.StartsWith("/storage/emulated/0/", StringComparison.Ordinal)) continue;
-                    if (!files.ContainsKey(path)) files[path] = new RemoteFileInfo { Path = path, Size = Math.Max(0, size) };
+                    // Also filter defensively in case a device's find implementation
+                    // does not honor -prune exactly as expected.
+                    if (IsThumbnailCachePath(path)) continue;
+                    if (!files.ContainsKey(path)) files[path] = new RemoteFileInfo
+                    {
+                        Path = path,
+                        Size = Math.Max(0, size),
+                        ModifiedUnixSeconds = Math.Max(0, modifiedUnixSeconds)
+                    };
                 }
                 parsedFiles = files.Values.OrderBy(delegate(RemoteFileInfo file) { return file.Path; }, StringComparer.OrdinalIgnoreCase).ToList();
             }
@@ -5452,6 +6010,11 @@ namespace AndroidADBTools
         {
             if (startDownloadButton != null) startDownloadButton.Enabled = !downloading;
             if (browseDownloadFolderButton != null) browseDownloadFolderButton.Enabled = !downloading;
+            if (downloadModeComboBox != null) downloadModeComboBox.Enabled = !downloading;
+            if (incrementalDownloadCheck != null)
+                incrementalDownloadCheck.Enabled = !downloading && downloadModeComboBox != null && downloadModeComboBox.SelectedIndex == 1;
+            if (resetDownloadCheckpointButton != null)
+                resetDownloadCheckpointButton.Enabled = !downloading && downloadModeComboBox != null && downloadModeComboBox.SelectedIndex == 1;
             if (skipLargeDownloadCheck != null) skipLargeDownloadCheck.Enabled = !downloading;
             if (maxDownloadSizeNumber != null) maxDownloadSizeNumber.Enabled = !downloading && skipLargeDownloadCheck.Checked;
         }
@@ -5471,6 +6034,13 @@ namespace AndroidADBTools
             }
             if (safeParts.Count == 0) safeParts.Add("未命名檔案");
             return Path.Combine(safeParts.ToArray());
+        }
+
+        private static bool IsThumbnailCachePath(string remotePath)
+        {
+            string normalized = (remotePath ?? "").Replace('\\', '/');
+            return normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                .Any(delegate(string part) { return String.Equals(part, ".thumbnails", StringComparison.OrdinalIgnoreCase); });
         }
 
         private static string SanitizeWindowsName(string value)
@@ -5516,14 +6086,13 @@ namespace AndroidADBTools
             return bytes + " B";
         }
 
-        private static bool IsPngFile(string path)
+        private static bool IsPngData(byte[] data)
         {
-            if (!File.Exists(path) || new FileInfo(path).Length < 8) return false;
-            byte[] signature = new byte[8];
-            using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
-                if (stream.Read(signature, 0, signature.Length) != signature.Length) return false;
+            if (data == null || data.Length < 8) return false;
             byte[] expected = { 137, 80, 78, 71, 13, 10, 26, 10 };
-            return signature.SequenceEqual(expected);
+            for (int i = 0; i < expected.Length; i++)
+                if (data[i] != expected[i]) return false;
+            return true;
         }
 
         private async Task ApplyQuickSettingsAsync()
@@ -5830,8 +6399,14 @@ namespace AndroidADBTools
             if (volumeMaximumButton != null) volumeMaximumButton.Enabled = enabled;
             if (openUrlButton != null) openUrlButton.Enabled = enabled;
             if (screenshotButton != null) screenshotButton.Enabled = enabled;
+            if (screenshotClipboardButton != null) screenshotClipboardButton.Enabled = enabled;
             if (startDownloadButton != null) startDownloadButton.Enabled = enabled;
             if (browseDownloadFolderButton != null) browseDownloadFolderButton.Enabled = enabled;
+            if (downloadModeComboBox != null) downloadModeComboBox.Enabled = enabled;
+            if (incrementalDownloadCheck != null)
+                incrementalDownloadCheck.Enabled = enabled && downloadModeComboBox != null && downloadModeComboBox.SelectedIndex == 1;
+            if (resetDownloadCheckpointButton != null)
+                resetDownloadCheckpointButton.Enabled = enabled && downloadModeComboBox != null && downloadModeComboBox.SelectedIndex == 1;
             if (skipLargeDownloadCheck != null) skipLargeDownloadCheck.Enabled = enabled;
             if (maxDownloadSizeNumber != null) maxDownloadSizeNumber.Enabled = enabled && skipLargeDownloadCheck.Checked;
             if (urlTextBox != null) urlTextBox.Enabled = enabled;
