@@ -18,6 +18,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Globalization;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -33,8 +34,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.5.0")]
-[assembly: AssemblyFileVersion("2.0.5.0")]
+[assembly: AssemblyVersion("2.0.6.0")]
+[assembly: AssemblyFileVersion("2.0.6.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -48,8 +49,14 @@ namespace AndroidADBTools
         private static extern bool SetProcessDPIAware();
 
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            if (args != null && args.Length >= 3 &&
+                String.Equals(args[0], "--apply-update", StringComparison.OrdinalIgnoreCase))
+            {
+                RunSelfUpdate(args);
+                return;
+            }
             try
             {
                 // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4.
@@ -63,6 +70,113 @@ namespace AndroidADBTools
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm());
+        }
+
+        private static void RunSelfUpdate(string[] args)
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            try
+            {
+                int processId;
+                if (!Int32.TryParse(args[1], out processId) || processId < 0)
+                    throw new InvalidOperationException("更新程序收到無效的主程式識別碼。");
+                string targetPath = Path.GetFullPath(args[2]);
+                bool restart = !args.Any(delegate(string value)
+                {
+                    return String.Equals(value, "--no-restart", StringComparison.OrdinalIgnoreCase);
+                });
+                if (processId > 0)
+                {
+                    try
+                    {
+                        Process running = Process.GetProcessById(processId);
+                        if (!running.WaitForExit(120000))
+                            throw new TimeoutException("等待舊版程式關閉逾時。");
+                    }
+                    catch (ArgumentException) { }
+                }
+
+                string sourcePath = Path.GetFullPath(Application.ExecutablePath);
+                if (String.Equals(sourcePath, targetPath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("更新來源與安裝位置相同，無法安全替換。");
+                string targetDirectory = Path.GetDirectoryName(targetPath);
+                if (String.IsNullOrWhiteSpace(targetDirectory))
+                    throw new InvalidOperationException("找不到程式安裝資料夾。");
+                Directory.CreateDirectory(targetDirectory);
+                string newPath = targetPath + ".update-new";
+                string backupPath = targetPath + ".update-backup";
+                try
+                {
+                    if (File.Exists(newPath)) File.Delete(newPath);
+                    File.Copy(sourcePath, newPath, true);
+                    if (File.Exists(backupPath)) File.Delete(backupPath);
+                    if (File.Exists(targetPath))
+                        File.Replace(newPath, targetPath, backupPath, true);
+                    else
+                        File.Move(newPath, targetPath);
+
+                    if (restart)
+                    {
+                        Process.Start(new ProcessStartInfo(targetPath)
+                        {
+                            UseShellExecute = true,
+                            WorkingDirectory = targetDirectory
+                        });
+                    }
+                    try { if (File.Exists(backupPath)) File.Delete(backupPath); } catch { }
+                }
+                catch
+                {
+                    try
+                    {
+                        if (File.Exists(backupPath))
+                        {
+                            if (File.Exists(targetPath)) File.Delete(targetPath);
+                            File.Move(backupPath, targetPath);
+                        }
+                    }
+                    catch { }
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("自動更新無法完成。原本版本將予以保留。\n\n" + ex.Message,
+                    "Android ADB 快速工具更新失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Environment.ExitCode = 1;
+            }
+        }
+    }
+
+    public sealed class GithubReleaseInfo
+    {
+        public string tag_name { get; set; }
+        public string name { get; set; }
+        public bool draft { get; set; }
+        public bool prerelease { get; set; }
+        public List<GithubReleaseAsset> assets { get; set; }
+
+        public GithubReleaseInfo()
+        {
+            tag_name = "";
+            name = "";
+            assets = new List<GithubReleaseAsset>();
+        }
+    }
+
+    public sealed class GithubReleaseAsset
+    {
+        public string name { get; set; }
+        public string browser_download_url { get; set; }
+        public string digest { get; set; }
+        public long size { get; set; }
+
+        public GithubReleaseAsset()
+        {
+            name = "";
+            browser_download_url = "";
+            digest = "";
         }
     }
 
@@ -536,6 +650,7 @@ namespace AndroidADBTools
         public MainForm()
         {
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AndroidADBTools");
+            CleanupOldUpdateDownloads(Path.Combine(folder, "updates"));
             settingsFile = Path.Combine(folder, "settings.json");
             deviceInformationCacheFolder = Path.Combine(folder, "device-information-cache");
             settings = LoadSettings();
@@ -3408,7 +3523,7 @@ namespace AndroidADBTools
                 aboutForm.ShowIcon = false;
                 aboutForm.MinimizeBox = false;
                 aboutForm.Size = new Size(Math.Min(ScaleValue(660, scale), maximumWidth),
-                    Math.Min(ScaleValue(500, scale), maximumHeight));
+                    Math.Min(ScaleValue(540, scale), maximumHeight));
                 aboutForm.MinimumSize = new Size(Math.Min(ScaleValue(520, scale), maximumWidth),
                     Math.Min(ScaleValue(440, scale), maximumHeight));
                 aboutForm.Padding = ScalePadding(new Padding(28, 24, 28, 20), scale);
@@ -3418,7 +3533,7 @@ namespace AndroidADBTools
                     Dock = DockStyle.Fill,
                     BackColor = Bg,
                     ColumnCount = 1,
-                    RowCount = 9,
+                    RowCount = 10,
                     Margin = new Padding(0)
                 };
                 layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -3429,6 +3544,7 @@ namespace AndroidADBTools
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(50, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(42, scale)));
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(50, scale)));
                 layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
                 layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(54, scale)));
                 aboutForm.Controls.Add(layout);
@@ -3477,6 +3593,13 @@ namespace AndroidADBTools
                 {
                     OpenExternalLink("https://github.com/ahui3c/AndroidADBTools/blob/main/THIRD_PARTY_NOTICES.md");
                 };
+                Label updateStatus = new Label
+                {
+                    Text = "可按「線上更新」檢查並自動安裝最新公開版本。",
+                    ForeColor = Muted,
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft
+                };
                 FlowLayoutPanel actions = new FlowLayoutPanel
                 {
                     Dock = DockStyle.Fill,
@@ -3490,6 +3613,26 @@ namespace AndroidADBTools
                 close.MinimumSize = close.Size;
                 close.Click += delegate { aboutForm.Close(); };
                 actions.Controls.Add(close);
+                Button onlineUpdate = NewButton("線上更新", false, 130);
+                onlineUpdate.Size = ScaleSize(new Size(130, 36), scale);
+                onlineUpdate.MinimumSize = onlineUpdate.Size;
+                onlineUpdate.Click += async delegate
+                {
+                    onlineUpdate.Enabled = false;
+                    close.Enabled = false;
+                    aboutForm.ControlBox = false;
+                    bool launched = await StartOnlineUpdateAsync(updateStatus);
+                    if (launched)
+                    {
+                        aboutForm.Close();
+                        BeginInvoke(new Action(delegate { Application.Exit(); }));
+                        return;
+                    }
+                    onlineUpdate.Enabled = true;
+                    close.Enabled = true;
+                    aboutForm.ControlBox = true;
+                };
+                actions.Controls.Add(onlineUpdate);
 
                 layout.Controls.Add(title, 0, 0);
                 layout.Controls.Add(version, 0, 1);
@@ -3499,10 +3642,233 @@ namespace AndroidADBTools
                 layout.Controls.Add(website, 0, 5);
                 layout.Controls.Add(license, 0, 6);
                 layout.Controls.Add(thirdParty, 0, 7);
-                layout.Controls.Add(actions, 0, 8);
+                layout.Controls.Add(updateStatus, 0, 8);
+                layout.Controls.Add(actions, 0, 9);
                 ApplySmoothTextRendering(aboutForm);
                 aboutForm.ShowDialog(this);
             }
+        }
+
+        private async Task<bool> StartOnlineUpdateAsync(Label statusLabel)
+        {
+            const string latestReleaseApi = "https://api.github.com/repos/ahui3c/AndroidADBTools/releases/latest";
+            string updateFolder = "";
+            bool updaterStarted = false;
+            try
+            {
+                statusLabel.Text = "正在查詢 GitHub 最新公開版本...";
+                statusLabel.ForeColor = Color.FromArgb(191, 128, 31);
+                ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+                GithubReleaseInfo release;
+                using (WebClient client = CreateGithubWebClient())
+                {
+                    string json = await client.DownloadStringTaskAsync(new Uri(latestReleaseApi));
+                    JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue };
+                    release = serializer.Deserialize<GithubReleaseInfo>(json);
+                }
+                if (release == null || release.draft || release.prerelease)
+                    throw new InvalidOperationException("GitHub 沒有回傳可用的正式版本。");
+                Version latestVersion = ParseReleaseVersion(release.tag_name);
+                Version currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0, 0);
+                if (latestVersion <= currentVersion)
+                {
+                    statusLabel.Text = "目前已是最新公開版本（" + AppVersionText() + "）。";
+                    statusLabel.ForeColor = Green;
+                    return false;
+                }
+
+                GithubReleaseAsset executableAsset = (release.assets ?? new List<GithubReleaseAsset>())
+                    .FirstOrDefault(delegate(GithubReleaseAsset asset)
+                    {
+                        return String.Equals(asset.name, "AndroidADBTools.exe", StringComparison.OrdinalIgnoreCase);
+                    });
+                if (executableAsset == null || String.IsNullOrWhiteSpace(executableAsset.browser_download_url))
+                    throw new InvalidOperationException("最新版本沒有提供 AndroidADBTools.exe 更新檔。");
+                Uri downloadUri = new Uri(executableAsset.browser_download_url);
+                if (!String.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                    !String.Equals(downloadUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("GitHub 回傳了非預期的更新檔網址。");
+                if (executableAsset.size <= 0 || executableAsset.size > 100L * 1024L * 1024L)
+                    throw new InvalidOperationException("更新檔大小不合理，已取消更新。");
+
+                string expectedSha256 = ReleaseAssetSha256(executableAsset.digest);
+                if (expectedSha256.Length == 0)
+                    expectedSha256 = await DownloadReleaseChecksumAsync(release.assets, latestVersion);
+                if (expectedSha256.Length != 64)
+                    throw new InvalidOperationException("最新版本沒有可驗證的 SHA-256，已取消更新。");
+
+                statusLabel.Text = "正在下載 " + release.tag_name + "，完成後會自動重新啟動...";
+                byte[] data;
+                using (WebClient client = CreateGithubWebClient())
+                    data = await client.DownloadDataTaskAsync(downloadUri);
+                if (data == null || data.LongLength != executableAsset.size || data.Length < 2 ||
+                    data[0] != (byte)'M' || data[1] != (byte)'Z')
+                    throw new InvalidDataException("下載的更新檔不完整或不是有效的 Windows 執行檔。");
+                string actualSha256 = ComputeSha256(data);
+                if (!String.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("更新檔 SHA-256 驗證失敗，已取消更新。");
+
+                string localRoot = Path.Combine(Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData), "AndroidADBTools", "updates");
+                updateFolder = Path.Combine(localRoot, "update-" + latestVersion + "-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(updateFolder);
+                string downloadedExecutable = Path.Combine(updateFolder, "AndroidADBTools.exe");
+                File.WriteAllBytes(downloadedExecutable, data);
+                Version downloadedVersion = ParseFileVersion(downloadedExecutable);
+                if (downloadedVersion != latestVersion)
+                    throw new InvalidDataException("更新檔版本與 GitHub Release 標籤不一致，已取消更新。");
+
+                string targetExecutable = Path.GetFullPath(Application.ExecutablePath);
+                string targetDirectory = Path.GetDirectoryName(targetExecutable);
+                bool requiresElevation = !CanWriteToDirectory(targetDirectory);
+                statusLabel.Text = requiresElevation
+                    ? "更新已下載；即將顯示 Windows UAC 授權畫面。"
+                    : "更新已下載；正在準備自動替換並重新啟動。";
+                ProcessStartInfo updater = new ProcessStartInfo(downloadedExecutable)
+                {
+                    Arguments = "--apply-update " + Process.GetCurrentProcess().Id + " " +
+                        QuoteProcessArgument(targetExecutable),
+                    UseShellExecute = true,
+                    WorkingDirectory = updateFolder,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                if (requiresElevation) updater.Verb = "runas";
+                Process.Start(updater);
+                updaterStarted = true;
+                return true;
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                if (ex.NativeErrorCode == 1223)
+                {
+                    statusLabel.Text = "已取消 Windows UAC 授權，程式未更新。";
+                    statusLabel.ForeColor = Muted;
+                    return false;
+                }
+                statusLabel.Text = "線上更新失敗。";
+                statusLabel.ForeColor = Red;
+                MessageBox.Show(this, "無法啟動自動更新。\n\n" + ex.Message,
+                    "線上更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = "線上更新失敗；目前版本未變更。";
+                statusLabel.ForeColor = Red;
+                MessageBox.Show(this, "無法完成線上更新。原本版本不會被更動。\n\n" + ex.Message,
+                    "線上更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                Log("線上更新失敗：" + ex);
+                return false;
+            }
+            finally
+            {
+                if (!updaterStarted && !String.IsNullOrWhiteSpace(updateFolder))
+                {
+                    try { if (Directory.Exists(updateFolder)) Directory.Delete(updateFolder, true); } catch { }
+                }
+            }
+        }
+
+        private static WebClient CreateGithubWebClient()
+        {
+            WebClient client = new WebClient();
+            client.Encoding = Encoding.UTF8;
+            client.Headers[HttpRequestHeader.UserAgent] = "AndroidADBTools/" + AppVersionText().TrimStart('v');
+            client.Headers[HttpRequestHeader.Accept] = "application/vnd.github+json";
+            client.Headers["X-GitHub-Api-Version"] = "2022-11-28";
+            client.Headers[HttpRequestHeader.CacheControl] = "no-cache";
+            return client;
+        }
+
+        private static Version ParseReleaseVersion(string tag)
+        {
+            string value = (tag ?? "").Trim();
+            if (value.StartsWith("v", StringComparison.OrdinalIgnoreCase)) value = value.Substring(1);
+            int suffix = value.IndexOf('-');
+            if (suffix >= 0) value = value.Substring(0, suffix);
+            Version version;
+            if (!Version.TryParse(value, out version))
+                throw new InvalidDataException("GitHub 最新版本標籤無法辨識：" + tag);
+            return new Version(version.Major, version.Minor, Math.Max(0, version.Build),
+                Math.Max(0, version.Revision));
+        }
+
+        private static Version ParseFileVersion(string path)
+        {
+            string value = FileVersionInfo.GetVersionInfo(path).FileVersion;
+            Version version;
+            if (!Version.TryParse(value, out version))
+                throw new InvalidDataException("無法辨識下載檔案的程式版本。");
+            return version;
+        }
+
+        private static string ReleaseAssetSha256(string digest)
+        {
+            Match match = Regex.Match(digest ?? "", @"(?i)^sha256:([0-9a-f]{64})$");
+            return match.Success ? match.Groups[1].Value.ToUpperInvariant() : "";
+        }
+
+        private static async Task<string> DownloadReleaseChecksumAsync(
+            IEnumerable<GithubReleaseAsset> assets, Version releaseVersion)
+        {
+            GithubReleaseAsset sums = (assets ?? Enumerable.Empty<GithubReleaseAsset>())
+                .FirstOrDefault(delegate(GithubReleaseAsset asset)
+                {
+                    return String.Equals(asset.name, "SHA256SUMS-v" + releaseVersion.Major + "." +
+                        releaseVersion.Minor + "." + releaseVersion.Build + ".txt", StringComparison.OrdinalIgnoreCase);
+                });
+            if (sums == null || String.IsNullOrWhiteSpace(sums.browser_download_url)) return "";
+            Uri uri = new Uri(sums.browser_download_url);
+            if (!String.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !String.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) return "";
+            string content;
+            using (WebClient client = CreateGithubWebClient())
+                content = await client.DownloadStringTaskAsync(uri);
+            Match match = Regex.Match(content ?? "", @"(?im)^([0-9a-f]{64})\s+AndroidADBTools\.exe\s*$");
+            return match.Success ? match.Groups[1].Value.ToUpperInvariant() : "";
+        }
+
+        private static string ComputeSha256(byte[] data)
+        {
+            using (SHA256 sha = SHA256.Create())
+                return BitConverter.ToString(sha.ComputeHash(data)).Replace("-", "");
+        }
+
+        private static bool CanWriteToDirectory(string directory)
+        {
+            if (String.IsNullOrWhiteSpace(directory)) return false;
+            string testPath = Path.Combine(directory, ".androidadbtools-write-test-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
+            {
+                using (FileStream stream = new FileStream(testPath, FileMode.CreateNew, FileAccess.Write,
+                    FileShare.None, 1, FileOptions.DeleteOnClose)) stream.WriteByte(0);
+                return true;
+            }
+            catch { return false; }
+            finally { try { if (File.Exists(testPath)) File.Delete(testPath); } catch { } }
+        }
+
+        private static string QuoteProcessArgument(string value)
+        {
+            return "\"" + (value ?? "").Replace("\"", "\\\"") + "\"";
+        }
+
+        private static void CleanupOldUpdateDownloads(string root)
+        {
+            try
+            {
+                if (!Directory.Exists(root)) return;
+                foreach (string directory in Directory.GetDirectories(root, "update-*", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        if (Directory.GetCreationTimeUtc(directory) < DateTime.UtcNow.AddHours(-1))
+                            Directory.Delete(directory, true);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
 
         private LinkLabel NewAboutLink(string text)

@@ -4,6 +4,21 @@
 
 ## [尚未發行]
 
+## [2.0.6] - 2026-08-14
+
+### 自動更新
+
+- 「關於」頁面新增「線上更新」按鈕，可查詢 GitHub 最新公開 Release、下載新版主程式、自動替換目前版本並重新啟動。
+- 更新前會核對 Release SHA-256、下載檔案大小、Windows 執行檔格式及檔案版本；驗證不符時不會更動原程式。
+- 程式位於受保護資料夾時，更新程序會自動顯示 Windows UAC 授權畫面；使用者取消授權時會保留原版本。
+- 替換過程保留暫時備份，更新或重新啟動失敗時會嘗試回復原本版本。
+
+### 發行與安裝
+
+- GitHub Release 除了標準與 Complete 可攜式 ZIP，新增 `AndroidADBTools-v2.0.6-complete-setup.exe` 完整安裝版。
+- 完整安裝版會將 AndroidADBTools、ADB Platform-Tools、ArgyllCMS `spotread.exe`、授權及說明文件安裝到 Program Files，並建立開始功能表項目與解除安裝程式。
+- 安裝程式支援選配桌面捷徑、既有版本原位置升級與 Windows UAC；安裝後程式仍可使用「線上更新」自動升級。
+
 ## [2.0.5] - 2026-08-14
 
 ### 手機資訊
@@ -101,7 +116,8 @@
 - 提供亮度、快速設定、截圖與 DCIM／Pictures 資料下載。
 - 支援 Per-Monitor V2 高 DPI 與視窗大小記憶。
 
-[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.5...HEAD
+[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.6...HEAD
+[2.0.6]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.2...v2.0.3

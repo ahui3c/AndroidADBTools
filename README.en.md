@@ -10,13 +10,15 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="GNU AGPL v3"></a>
 </p>
 
-A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
+A Windows GUI for ADB, available as portable packages or a complete installer, that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.5**
+Current version: **v2.0.6**
 
 [View the complete changelog](CHANGELOG.md)
 
 ## Features
+
+- The About dialog includes one-click online updates. It downloads and verifies the latest public GitHub Release, replaces the current executable, and restarts the app automatically; Windows displays a UAC prompt when the install location requires administrator permission.
 
 - Detects `adb.exe` and reports connected, offline, and unauthorized devices.
 - Includes a Wi-Fi debugging manager for pairing, connecting, and disconnecting with the phone IP, pairing port, six-digit code, and debugging port.
@@ -90,13 +92,14 @@ Use the latest version from the official page. Google states that current Platfo
 
 ## Download and Use
 
-Each GitHub Release provides two archives:
+Each GitHub Release provides portable packages alongside a complete installer:
 
-- `AndroidADBTools-v2.0.5.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
-- `AndroidADBTools-v2.0.5-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.6.zip`: the standard portable package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.6-complete.zip`: the Complete portable package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.6-complete-setup.exe`: the complete installer containing the same bundled tools as the Complete portable package. It installs into Program Files and provides Start menu shortcuts, an optional desktop shortcut, and uninstallation support.
 
-1. Choose the ZIP you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases) and extract the entire archive.
-2. Run `AndroidADBTools.exe`.
+1. Choose the package you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases). Fully extract a portable ZIP, or run Setup and accept the Windows UAC prompt for the installer.
+2. Run `AndroidADBTools.exe` from a portable folder, or launch the installed app from the Start menu.
 3. With the standard package, if ADB is not detected automatically, click **Select adb.exe** and choose the Android SDK's `platform-tools\adb.exe`.
 4. Connect and authorize the phone, then click **Check again**.
 

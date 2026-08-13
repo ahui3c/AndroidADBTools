@@ -1,8 +1,10 @@
 param(
-    [string]$Version = '2.0.5',
+    [string]$Version = '2.0.6',
     [string]$PlatformToolsZip = '',
     [string]$ArgyllBinaryZip = '',
-    [string]$ArgyllSourceZip = ''
+    [string]$ArgyllSourceZip = '',
+    [string]$InnoCompiler = '',
+    [switch]$SkipInstaller
 )
 
 $ErrorActionPreference = 'Stop'
@@ -49,6 +51,7 @@ $standardDir = Join-Path $releaseRoot $standardName
 $completeDir = Join-Path $releaseRoot $completeName
 $standardZip = Join-Path $releaseRoot "$standardName.zip"
 $completeZip = Join-Path $releaseRoot "$completeName.zip"
+$installer = Join-Path $releaseRoot "$completeName-setup.exe"
 $tempDir = Join-Path $releaseRoot "package-temp-v$Version"
 
 foreach ($target in @($standardDir, $completeDir, $tempDir)) {
@@ -56,7 +59,7 @@ foreach ($target in @($standardDir, $completeDir, $tempDir)) {
         Remove-Item -LiteralPath $target -Recurse -Force
     }
 }
-foreach ($target in @($standardZip, $completeZip)) {
+foreach ($target in @($standardZip, $completeZip, $installer)) {
     if (Test-Path -LiteralPath $target) {
         Remove-Item -LiteralPath $target -Force
     }
@@ -143,10 +146,42 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
     $false
 )
 
+if (-not $SkipInstaller) {
+    if ([string]::IsNullOrWhiteSpace($InnoCompiler)) {
+        $innoCandidates = @(
+            (Join-Path ${env:ProgramFiles} 'Inno Setup 7\ISCC.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7\ISCC.exe'),
+            (Join-Path ${env:ProgramFiles} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+        ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        $InnoCompiler = $innoCandidates | Where-Object {
+            Test-Path -LiteralPath $_ -PathType Leaf
+        } | Select-Object -First 1
+    }
+    if ([string]::IsNullOrWhiteSpace($InnoCompiler) -or
+        -not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) {
+        throw '找不到 Inno Setup ISCC.exe。請安裝 Inno Setup 6/7，或以 -InnoCompiler 指定位置。'
+    }
+    $installerScript = Join-Path $root 'installer\AndroidADBTools.iss'
+    & $InnoCompiler /Qp "/DMyAppVersion=$Version" "/DPackageSource=$completeDir" `
+        "/DReleaseOutput=$releaseRoot" $installerScript
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+        throw '完整安裝版編譯失敗。'
+    }
+    $installerVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($installer).FileVersion.Trim()
+    if ($installerVersion -ne "$Version.0") {
+        throw "安裝檔版本 $installerVersion 與打包版本 $Version 不一致。"
+    }
+}
+
 Remove-Item -LiteralPath $tempDir -Recurse -Force
 
 $hashFile = Join-Path $releaseRoot "SHA256SUMS-v$Version.txt"
-$hashLines = foreach ($path in @($standardZip, $completeZip, $exe, $ArgyllSourceZip)) {
+$releaseAssets = @($standardZip, $completeZip, $exe, $ArgyllSourceZip)
+if (-not $SkipInstaller) { $releaseAssets += $installer }
+$hashLines = foreach ($path in $releaseAssets) {
     $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $path
     "$($hash.Hash)  $(Split-Path $path -Leaf)"
 }
@@ -154,4 +189,5 @@ $hashLines = foreach ($path in @($standardZip, $completeZip, $exe, $ArgyllSource
 
 Write-Host "完成：$standardZip"
 Write-Host "完成：$completeZip"
+if (-not $SkipInstaller) { Write-Host "完成：$installer" }
 Write-Host "雜湊：$hashFile"

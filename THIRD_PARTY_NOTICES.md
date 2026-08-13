@@ -1,6 +1,6 @@
 # 第三方元件與授權聲明
 
-本文件說明 `AndroidADBTools-*-complete.zip` 額外包含的第三方執行檔。沒有 `-complete` 後綴的標準版不包含下列二進位元件。
+本文件說明 `AndroidADBTools-*-complete.zip` 與 `AndroidADBTools-*-complete-setup.exe` 額外包含的第三方執行檔。沒有 `-complete` 後綴的標準可攜式版不包含下列二進位元件。
 
 ## Android SDK Platform-Tools / ADB 37.0.0
 

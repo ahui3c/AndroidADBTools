@@ -10,9 +10,9 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="GNU AGPL v3"></a>
 </p>
 
-一套免安裝的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
+一套可使用免安裝可攜式版本或完整安裝版的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.5**
+目前版本：**v2.0.6**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
@@ -25,6 +25,7 @@
 - 「手機資訊」可讀取型號、處理器／SoC、核心與 ABI、記憶體、儲存空間、電池、螢幕、相機、Android 版本、安全性更新、序號及主要硬體功能，並標示每項資料來源。
 - 手機資訊支援一鍵複製完整摘要、雙擊複製單項內容，以及匯出 UTF-8 文字檔、Excel `.xlsx` 或 JSON；Excel 匯出不需要預先安裝 Microsoft Excel。Android 未公開的規格會明確標示而不使用推測值。
 - 手機資訊讀取後會依裝置識別保存本機快取；同一台手機再次連接或在多台手機之間切換時會自動帶入，並可強制更新或只清除目前手機的快取。
+- 「關於」頁面提供一鍵線上更新：自動下載並驗證 GitHub 最新公開版本、替換目前程式後重新啟動；安裝位置需要系統管理員權限時會顯示 Windows UAC 授權畫面。
 - 建立多組「常用 APK 安裝」清單，一鍵依序安裝並顯示每個 APK 的結果。
 - APK 清單欄位過長時，可將滑鼠移到項目上查看完整檔名與完整位置。
 - 「我的組合」支援拖曳排序；自訂組合可雙擊直接編輯名稱，排序會自動保存。
@@ -90,13 +91,14 @@
 
 ## 下載與使用
 
-GitHub Release 提供兩種壓縮包：
+GitHub Release 同時提供可攜式版本與完整安裝版：
 
-- `AndroidADBTools-v2.0.5.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
-- `AndroidADBTools-v2.0.5-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.6.zip`：標準可攜式版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.6-complete.zip`：Complete 可攜式版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.6-complete-setup.exe`：完整安裝版，包含與 Complete 可攜式版相同的工具，會安裝到 Program Files，提供開始功能表、選配桌面捷徑與解除安裝功能。
 
-1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的 ZIP 並完整解壓縮。
-2. 執行 `AndroidADBTools.exe`。
+1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的版本。可攜式版請完整解壓縮；安裝版直接執行 Setup 並接受 Windows UAC 授權。
+2. 可攜式版執行 `AndroidADBTools.exe`；安裝版可從開始功能表啟動。
 3. 使用標準版且程式沒有找到 ADB 時，按「選擇 adb.exe」並指定 Android SDK 的 `platform-tools\adb.exe`。
 4. 連接並授權手機後按「重新檢查」。
 
