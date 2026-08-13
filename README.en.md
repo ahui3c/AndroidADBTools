@@ -8,6 +8,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="GNU AGPL v3"></a>
+  <a href="https://github.com/ahui3c/AndroidADBTools/releases/latest"><img src="https://img.shields.io/github/v/release/ahui3c/AndroidADBTools?label=release" alt="Latest release"></a>
+  <a href="https://github.com/ahui3c/AndroidADBTools/releases/latest"><img src="https://img.shields.io/github/downloads/ahui3c/AndroidADBTools/total?label=downloads" alt="GitHub downloads"></a>
 </p>
 
 A Windows GUI for ADB, available as portable packages or a complete installer, that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
@@ -16,9 +18,12 @@ Current version: **v2.0.6**
 
 [View the complete changelog](CHANGELOG.md)
 
+> v2.0.6 is available as a standard portable package, a Complete portable package with ADB and ArgyllCMS `spotread`, and a Complete installer with UAC, shortcuts, and uninstallation support. The About dialog can also update the application to the latest public release in one click.
+
 ## Features
 
 - The About dialog includes one-click online updates. It downloads and verifies the latest public GitHub Release, replaces the current executable, and restarts the app automatically; Windows displays a UAC prompt when the install location requires administrator permission.
+- Choose a portable package, or use the Complete installer with bundled ADB, `spotread.exe`, Start menu shortcuts, and uninstallation support.
 
 - Detects `adb.exe` and reports connected, offline, and unauthorized devices.
 - Includes a Wi-Fi debugging manager for pairing, connecting, and disconnecting with the phone IP, pairing port, six-digit code, and debugging port.
@@ -47,15 +52,19 @@ Current version: **v2.0.6**
 
 <table>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="Reusable APK groups and batch installation"><br><sub>Reusable APK groups and batch installation</sub></td>
+    <td colspan="2"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="Reusable APK groups and batch installation"><br><sub>Custom and folder-synchronized APK groups with batch installation</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="Quick APK installation and file transfer"><br><sub>Drag and drop APKs, files, and folders</sub></td>
-    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="Manual and automatic device brightness adjustment"><br><sub>Manual and automatic device brightness adjustment</sub></td>
+    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="Quick APK installation and file transfer"><br><sub>Drag APKs, files, or folders and select the phone destination</sub></td>
+    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="Manual and automatic device brightness adjustment"><br><sub>Manual controls and ArgyllCMS measured automatic adjustment</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="Common device settings"><br><sub>Brightness, display, volume, URL, and screenshot controls</sub></td>
-    <td width="50%"><img src="docs/screenshots/05-data-backup.jpg" alt="Phone photo and video backup"><br><sub>Download and back up phone photos and videos</sub></td>
+    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="Common device settings"><br><sub>Display, volume, URL, and clipboard screenshot controls</sub></td>
+    <td width="50%"><img src="docs/screenshots/05-device-information.jpg" alt="Detailed phone information"><br><sub>Hardware and system details with cache, copy, and export</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/06-data-backup.jpg" alt="Phone photo and video backup"><br><sub>ZIP or folder backup with per-device incremental checkpoints</sub></td>
+    <td width="50%"><img src="docs/screenshots/07-about-online-update.jpg" alt="About and online update"><br><sub>One-click online update from the About dialog</sub></td>
   </tr>
 </table>
 

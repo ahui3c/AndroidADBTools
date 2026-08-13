@@ -8,6 +8,8 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="GNU AGPL v3"></a>
+  <a href="https://github.com/ahui3c/AndroidADBTools/releases/latest"><img src="https://img.shields.io/github/v/release/ahui3c/AndroidADBTools?label=最新版" alt="最新版本"></a>
+  <a href="https://github.com/ahui3c/AndroidADBTools/releases/latest"><img src="https://img.shields.io/github/downloads/ahui3c/AndroidADBTools/total?label=下載" alt="GitHub 下載次數"></a>
 </p>
 
 一套可使用免安裝可攜式版本或完整安裝版的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
@@ -15,6 +17,8 @@
 目前版本：**v2.0.6**
 
 [查看完整更新紀錄](CHANGELOG.md)
+
+> v2.0.6 同時提供標準可攜式版、內含 ADB 與 ArgyllCMS `spotread` 的 Complete 可攜式版，以及支援 UAC、捷徑與解除安裝的 Complete 完整安裝版。程式也能從「關於」頁面一鍵更新到最新公開版本。
 
 ## 主要功能
 
@@ -26,6 +30,7 @@
 - 手機資訊支援一鍵複製完整摘要、雙擊複製單項內容，以及匯出 UTF-8 文字檔、Excel `.xlsx` 或 JSON；Excel 匯出不需要預先安裝 Microsoft Excel。Android 未公開的規格會明確標示而不使用推測值。
 - 手機資訊讀取後會依裝置識別保存本機快取；同一台手機再次連接或在多台手機之間切換時會自動帶入，並可強制更新或只清除目前手機的快取。
 - 「關於」頁面提供一鍵線上更新：自動下載並驗證 GitHub 最新公開版本、替換目前程式後重新啟動；安裝位置需要系統管理員權限時會顯示 Windows UAC 授權畫面。
+- 可選擇免安裝可攜式版本，或使用內含 ADB、`spotread.exe`、開始功能表捷徑與解除安裝功能的 Complete 安裝版。
 - 建立多組「常用 APK 安裝」清單，一鍵依序安裝並顯示每個 APK 的結果。
 - APK 清單欄位過長時，可將滑鼠移到項目上查看完整檔名與完整位置。
 - 「我的組合」支援拖曳排序；自訂組合可雙擊直接編輯名稱，排序會自動保存。
@@ -46,15 +51,19 @@
 
 <table>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="常用 APK 批次安裝"><br><sub>常用 APK 組合與批次安裝</sub></td>
+    <td colspan="2"><img src="docs/screenshots/01-apk-batch-install.jpg" alt="常用 APK 組合與批次安裝"><br><sub>常用 APK 組合、自建／資料夾同步分類與批次安裝</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="快速安裝 APK 與傳輸資料"><br><sub>拖放 APK、檔案與資料夾</sub></td>
-    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="手動與全自動調整設備亮度"><br><sub>手動與全自動調整設備亮度</sub></td>
+    <td width="50%"><img src="docs/screenshots/02-quick-install-transfer.jpg" alt="快速安裝 APK 與傳輸資料"><br><sub>拖放 APK、檔案與資料夾，並選擇手機目的地</sub></td>
+    <td width="50%"><img src="docs/screenshots/03-brightness-adjustment.jpg" alt="手動與全自動調整設備亮度"><br><sub>手動亮度控制與 ArgyllCMS 實測自動調整</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="設備常用設定"><br><sub>亮度、螢幕、音量、網址與截圖設定</sub></td>
-    <td width="50%"><img src="docs/screenshots/05-data-backup.jpg" alt="設備圖片影音資料備份"><br><sub>下載並備份手機圖片與影音資料</sub></td>
+    <td width="50%"><img src="docs/screenshots/04-quick-settings.jpg" alt="設備常用設定"><br><sub>顯示、音量、網址與截圖到剪貼簿</sub></td>
+    <td width="50%"><img src="docs/screenshots/05-device-information.jpg" alt="手機詳細資訊"><br><sub>手機硬體與系統資訊、快取、複製及匯出</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/06-data-backup.jpg" alt="下載並備份手機圖片與影音資料"><br><sub>ZIP／原始資料夾下載與分手機增量時間紀錄</sub></td>
+    <td width="50%"><img src="docs/screenshots/07-about-online-update.jpg" alt="關於與線上更新"><br><sub>關於頁面的一鍵線上更新</sub></td>
   </tr>
 </table>
 
