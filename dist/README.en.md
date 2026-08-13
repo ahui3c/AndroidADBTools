@@ -12,7 +12,7 @@
 
 A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.3**
+Current version: **v2.0.4**
 
 [View the complete changelog](CHANGELOG.md)
 
@@ -89,8 +89,8 @@ Use the latest version from the official page. Google states that current Platfo
 
 Each GitHub Release provides two archives:
 
-- `AndroidADBTools-v2.0.3.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
-- `AndroidADBTools-v2.0.3-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.4.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.4-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
 
 1. Choose the ZIP you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases) and extract the entire archive.
 2. Run `AndroidADBTools.exe`.

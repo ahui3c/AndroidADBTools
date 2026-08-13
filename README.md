@@ -12,7 +12,7 @@
 
 一套免安裝的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.3**
+目前版本：**v2.0.4**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
@@ -89,8 +89,8 @@
 
 GitHub Release 提供兩種壓縮包：
 
-- `AndroidADBTools-v2.0.3.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
-- `AndroidADBTools-v2.0.3-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.4.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.4-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
 
 1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的 ZIP 並完整解壓縮。
 2. 執行 `AndroidADBTools.exe`。

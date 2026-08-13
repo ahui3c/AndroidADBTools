@@ -4,6 +4,15 @@
 
 ## [尚未發行]
 
+## [2.0.4] - 2026-08-13
+
+### 介面設計
+
+- 全面改用「霧灰薄荷」淺色介面：以霧灰背景、白色卡片、深灰文字與薄荷綠主要操作取代原本的深色配色。
+- 將六項主要功能改為固定左側導覽列，選取項目以淡薄荷底色與綠色指示條標示，減少頂部分頁占用空間。
+- 統一輸入框、清單、表格、按鈕、拖放區、進度與執行紀錄的淺色視覺樣式，並保留自建組合藍色、資料夾同步組合黃色的辨識方式。
+- 修正內容超出頁面時，原生捲軸仍沿用舊深色主題而顯示成黑色的問題。
+
 ## [2.0.3] - 2026-08-10
 
 ### 資料下載
@@ -79,7 +88,8 @@
 - 提供亮度、快速設定、截圖與 DCIM／Pictures 資料下載。
 - 支援 Per-Monitor V2 高 DPI 與視窗大小記憶。
 
-[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.3...HEAD
+[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/ahui3c/AndroidADBTools/compare/v1.15.6...v2.0.1

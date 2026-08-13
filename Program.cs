@@ -32,8 +32,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.3.0")]
-[assembly: AssemblyFileVersion("2.0.3.0")]
+[assembly: AssemblyVersion("2.0.4.0")]
+[assembly: AssemblyFileVersion("2.0.4.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -261,19 +261,21 @@ namespace AndroidADBTools
         {
             DrawMode = TabDrawMode.OwnerDrawFixed;
             SizeMode = TabSizeMode.Fixed;
-            ItemSize = new Size(174, 46);
+            Alignment = TabAlignment.Left;
+            Multiline = true;
+            ItemSize = new Size(58, 154);
             Padding = new Point(0, 0);
             SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
         }
 
         protected override void OnPaintBackground(PaintEventArgs pevent)
         {
-            pevent.Graphics.Clear(Color.FromArgb(18, 22, 29));
+            pevent.Graphics.Clear(Color.FromArgb(247, 249, 250));
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.Clear(Color.FromArgb(18, 22, 29));
+            e.Graphics.Clear(Color.FromArgb(247, 249, 250));
             for (int i = 0; i < TabPages.Count; i++)
             {
                 DrawItemState state = SelectedIndex == i ? DrawItemState.Selected : DrawItemState.Default;
@@ -281,7 +283,7 @@ namespace AndroidADBTools
             }
             Rectangle pageBorder = DisplayRectangle;
             pageBorder.Inflate(1, 1);
-            using (Pen pen = new Pen(Color.FromArgb(51, 62, 78))) e.Graphics.DrawRectangle(pen, pageBorder);
+            using (Pen pen = new Pen(Color.FromArgb(217, 224, 229))) e.Graphics.DrawRectangle(pen, pageBorder);
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e)
@@ -289,21 +291,20 @@ namespace AndroidADBTools
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             e.Graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             Rectangle rect = GetTabRect(e.Index);
-            rect = new Rectangle(rect.X + 4, rect.Y + 4, rect.Width - 8, rect.Height - 6);
+            rect = new Rectangle(rect.X + 4, rect.Y + 2, rect.Width - 7, rect.Height - 4);
             bool selected = SelectedIndex == e.Index;
-            Color accent = TabPages[e.Index].Tag is Color ? (Color)TabPages[e.Index].Tag : Color.FromArgb(81, 155, 255);
-            Color fill = selected ? accent : Blend(Color.FromArgb(28, 34, 44), accent, 0.18F);
-            Color border = selected ? accent : Blend(Color.FromArgb(58, 69, 86), accent, 0.35F);
-            using (GraphicsPath path = RoundedPath(rect, 10))
-            using (SolidBrush brush = new SolidBrush(fill))
-            using (Pen pen = new Pen(border, selected ? 2F : 1F))
+            Color accent = Color.FromArgb(38, 158, 142);
+            Color fill = selected ? Blend(Color.White, accent, 0.12F) : Color.FromArgb(247, 249, 250);
+            using (SolidBrush brush = new SolidBrush(fill)) e.Graphics.FillRectangle(brush, rect);
+            if (selected)
             {
-                e.Graphics.FillPath(brush, path);
-                e.Graphics.DrawPath(pen, path);
+                using (SolidBrush marker = new SolidBrush(accent))
+                    e.Graphics.FillRectangle(marker, rect.Left, rect.Top + 6, 4, Math.Max(1, rect.Height - 12));
             }
-            using (SolidBrush textBrush = new SolidBrush(selected ? Color.White : Color.FromArgb(190, 201, 218)))
-            using (StringFormat format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
-                e.Graphics.DrawString(TabPages[e.Index].Text.Replace("&", ""), Font, textBrush, rect, format);
+            Rectangle textRect = new Rectangle(rect.Left + 14, rect.Top, Math.Max(1, rect.Width - 18), rect.Height);
+            using (SolidBrush textBrush = new SolidBrush(selected ? Color.FromArgb(25, 125, 114) : Color.FromArgb(48, 60, 70)))
+            using (StringFormat format = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
+                e.Graphics.DrawString(TabPages[e.Index].Text.Replace("&", ""), Font, textBrush, textRect, format);
         }
 
         private static GraphicsPath RoundedPath(Rectangle rect, int radius)
@@ -347,14 +348,14 @@ namespace AndroidADBTools
 
         [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
         private static extern int SetWindowTheme(IntPtr handle, string subAppName, string subIdList);
-        private readonly Color Bg = Color.FromArgb(18, 22, 29);
-        private readonly Color Card = Color.FromArgb(27, 33, 43);
-        private readonly Color Card2 = Color.FromArgb(35, 42, 54);
-        private readonly Color Accent = Color.FromArgb(81, 155, 255);
-        private readonly Color Green = Color.FromArgb(65, 201, 138);
-        private readonly Color Red = Color.FromArgb(255, 105, 120);
-        private readonly Color Muted = Color.FromArgb(158, 169, 188);
-        private readonly Color TextColor = Color.FromArgb(238, 242, 248);
+        private readonly Color Bg = Color.FromArgb(247, 249, 250);
+        private readonly Color Card = Color.FromArgb(255, 255, 255);
+        private readonly Color Card2 = Color.FromArgb(241, 244, 246);
+        private readonly Color Accent = Color.FromArgb(38, 158, 142);
+        private readonly Color Green = Color.FromArgb(31, 157, 122);
+        private readonly Color Red = Color.FromArgb(210, 70, 76);
+        private readonly Color Muted = Color.FromArgb(105, 117, 126);
+        private readonly Color TextColor = Color.FromArgb(39, 50, 59);
 
         private AppSettings settings;
         private readonly string settingsFile;
@@ -476,6 +477,7 @@ namespace AndroidADBTools
             DoubleBuffered = true;
 
             BuildUi();
+            ApplyLightControlTheme(this);
             InitializeBundledToolPaths();
             Application.AddMessageFilter(this);
             CaptureDpiMetrics(this);
@@ -515,13 +517,13 @@ namespace AndroidADBTools
         {
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
-            root.Padding = new Padding(22);
+            root.Padding = new Padding(16, 14, 16, 14);
             root.BackColor = Bg;
             root.RowCount = 3;
             root.ColumnCount = 1;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 126));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 110));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             Controls.Add(root);
 
@@ -532,19 +534,19 @@ namespace AndroidADBTools
                 Font = new Font(Font.FontFamily, 20F, FontStyle.Bold),
                 ForeColor = TextColor,
                 AutoSize = true,
-                Location = new Point(0, 2)
+                Location = new Point(10, 4)
             };
             Label subtitle = new Label
             {
                 Text = "連線確認、常用 APK 安裝與快速安裝",
                 ForeColor = Muted,
                 AutoSize = true,
-                Location = new Point(2, 38)
+                Location = new Point(12, 42)
             };
             Label versionLabel = new Label
             {
                 Text = AppVersionText(),
-                ForeColor = Color.FromArgb(105, 116, 134),
+                ForeColor = Muted,
                 Font = new Font(Font.FontFamily, 8.5F, FontStyle.Regular),
                 Dock = DockStyle.Right,
                 Width = 92,
@@ -557,7 +559,7 @@ namespace AndroidADBTools
 
             Panel deviceCard = NewCard();
             deviceCard.Dock = DockStyle.Fill;
-            deviceCard.Padding = new Padding(18, 14, 18, 12);
+            deviceCard.Padding = new Padding(18, 10, 18, 8);
             root.Controls.Add(deviceCard, 0, 1);
 
             adbStatusLabel = new Label
@@ -566,17 +568,17 @@ namespace AndroidADBTools
                 ForeColor = Muted,
                 Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold),
                 AutoSize = true,
-                Location = new Point(18, 16)
+                Location = new Point(18, 13)
             };
             deviceStatusLabel = new Label
             {
                 Text = "尚未檢查手機",
                 ForeColor = TextColor,
-                Font = new Font(Font.FontFamily, 15F, FontStyle.Bold),
+                Font = new Font(Font.FontFamily, 11F, FontStyle.Bold),
                 AutoSize = false,
                 AutoEllipsis = true,
-                Location = new Point(18, 46),
-                Height = 30
+                Location = new Point(178, 11),
+                Height = 27
             };
             deviceDetailLabel = new Label
             {
@@ -584,8 +586,8 @@ namespace AndroidADBTools
                 ForeColor = Muted,
                 AutoSize = false,
                 AutoEllipsis = true,
-                Location = new Point(20, 79),
-                Height = 25
+                Location = new Point(20, 48),
+                Height = 23
             };
             deviceCard.Controls.Add(adbStatusLabel);
             deviceCard.Controls.Add(deviceStatusLabel);
@@ -600,7 +602,7 @@ namespace AndroidADBTools
             FlowLayoutPanel statusActions = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
-                Height = 52,
+                Height = 47,
                 FlowDirection = FlowDirection.RightToLeft,
                 WrapContents = false,
                 Padding = new Padding(0, 5, 0, 0),
@@ -622,7 +624,7 @@ namespace AndroidADBTools
             FlowLayoutPanel deviceSelectionRow = new FlowLayoutPanel
             {
                 Dock = DockStyle.Bottom,
-                Height = 44,
+                Height = 40,
                 FlowDirection = FlowDirection.RightToLeft,
                 WrapContents = false,
                 Padding = new Padding(0, 5, 0, 0),
@@ -640,7 +642,7 @@ namespace AndroidADBTools
             deviceSelector = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                BackColor = Card2,
+                BackColor = Color.White,
                 ForeColor = TextColor,
                 FlatStyle = FlatStyle.Flat,
                 Width = 350,
@@ -681,7 +683,7 @@ namespace AndroidADBTools
             mainTabs.Dock = DockStyle.Fill;
             mainTabs.Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold);
             mainTabs.BackColor = Bg;
-            mainTabs.ItemSize = new Size(165, 46);
+            mainTabs.ItemSize = new Size(58, 154);
             TabPage groupsTab = NewTab("▦  常用 APK 安裝", Color.FromArgb(53, 120, 219));
             TabPage singleTab = NewTab("⇩  快速安裝 / 傳輸", Color.FromArgb(126, 87, 194));
             TabPage brightnessTab = NewTab("☀  亮度調整", Color.FromArgb(211, 132, 42));
@@ -703,6 +705,22 @@ namespace AndroidADBTools
             BuildQuickSettingsTab(quickSettingsTab);
             BuildDownloadTab(downloadTab);
             BuildLogTab(logTab);
+        }
+
+        private void ApplyLightControlTheme(Control parent)
+        {
+            foreach (Control control in parent.Controls)
+            {
+                if (control is TextBoxBase || control is ComboBox || control is NumericUpDown ||
+                    control is ListBox || control is ListView)
+                {
+                    control.BackColor = Color.White;
+                    control.ForeColor = TextColor;
+                    control.HandleCreated += delegate { SetWindowTheme(control.Handle, "Explorer", null); };
+                    if (control.IsHandleCreated) SetWindowTheme(control.Handle, "Explorer", null);
+                }
+                if (control.HasChildren) ApplyLightControlTheme(control);
+            }
         }
 
         private void BuildGroupsTab(TabPage tab)
@@ -772,7 +790,7 @@ namespace AndroidADBTools
                 HorizontalScrollbar = false,
                 AllowDrop = true
             };
-            groupList.HandleCreated += delegate { SetWindowTheme(groupList.Handle, "DarkMode_Explorer", null); };
+            groupList.HandleCreated += delegate { SetWindowTheme(groupList.Handle, "Explorer", null); };
             groupList.DrawItem += DrawGroupListItem;
             groupNameToolTip = new ToolTip { InitialDelay = 300, ReshowDelay = 100, AutoPopDelay = 8000, ShowAlways = true };
             groupList.MouseDown += GroupListMouseDown;
@@ -930,7 +948,7 @@ namespace AndroidADBTools
             };
             quickTransferDestinationComboBox.HandleCreated += delegate
             {
-                SetWindowTheme(quickTransferDestinationComboBox.Handle, "DarkMode_Explorer", null);
+                SetWindowTheme(quickTransferDestinationComboBox.Handle, "Explorer", null);
             };
             transferDropPanel.Controls.Add(transferDestinationLabel);
             transferDropPanel.Controls.Add(quickTransferDestinationComboBox);
@@ -980,8 +998,8 @@ namespace AndroidADBTools
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                BackColor = Color.FromArgb(15, 18, 24),
-                ForeColor = Color.FromArgb(201, 211, 225),
+                BackColor = Color.White,
+                ForeColor = TextColor,
                 BorderStyle = BorderStyle.None,
                 Font = new Font("Consolas", 9.5F),
                 Dock = DockStyle.Fill
@@ -1022,7 +1040,7 @@ namespace AndroidADBTools
                 BackColor = Card,
                 Margin = new Padding(0)
             };
-            brightnessViewport.HandleCreated += delegate { SetWindowTheme(brightnessViewport.Handle, "DarkMode_Explorer", null); };
+            brightnessViewport.HandleCreated += delegate { SetWindowTheme(brightnessViewport.Handle, "Explorer", null); };
             outer.Controls.Add(brightnessViewport);
 
             Panel controlCard = new Panel
@@ -1083,7 +1101,7 @@ namespace AndroidADBTools
                 Height = 38,
                 Font = new Font(Font.FontFamily, 14F, FontStyle.Bold),
                 TextAlign = HorizontalAlignment.Center,
-                BackColor = Color.FromArgb(19, 24, 32),
+                BackColor = Color.White,
                 ForeColor = TextColor,
                 BorderStyle = BorderStyle.FixedSingle,
                 Margin = new Padding(8, 4, 8, 4)
@@ -1172,7 +1190,7 @@ namespace AndroidADBTools
             {
                 Dock = DockStyle.Top,
                 Height = 388,
-                BackColor = Color.FromArgb(30, 38, 49),
+                BackColor = Color.FromArgb(237, 246, 244),
                 Padding = new Padding(16),
                 Margin = new Padding(0, 12, 0, 0)
             };
@@ -1308,8 +1326,8 @@ namespace AndroidADBTools
 
         private TextBox BrightnessToolTextBox(string text)
         {
-            TextBox box = new TextBox { Text = text ?? "", Dock = DockStyle.Fill, BackColor = Bg, ForeColor = TextColor, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 6, 8, 6) };
-            box.HandleCreated += delegate { SetWindowTheme(box.Handle, "DarkMode_Explorer", null); };
+            TextBox box = new TextBox { Text = text ?? "", Dock = DockStyle.Fill, BackColor = Color.White, ForeColor = TextColor, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 6, 8, 6) };
+            box.HandleCreated += delegate { SetWindowTheme(box.Handle, "Explorer", null); };
             return box;
         }
 
@@ -1335,7 +1353,7 @@ namespace AndroidADBTools
                 ForeColor = TextColor,
                 BorderStyle = BorderStyle.FixedSingle
             };
-            number.HandleCreated += delegate { SetWindowTheme(number.Handle, "DarkMode_Explorer", null); };
+            number.HandleCreated += delegate { SetWindowTheme(number.Handle, "Explorer", null); };
             return number;
         }
 
@@ -1480,7 +1498,7 @@ namespace AndroidADBTools
                 AutoScroll = true,
                 Margin = new Padding(0)
             };
-            contentViewport.HandleCreated += delegate { SetWindowTheme(contentViewport.Handle, "DarkMode_Explorer", null); };
+            contentViewport.HandleCreated += delegate { SetWindowTheme(contentViewport.Handle, "Explorer", null); };
             contentViewport.Controls.Add(content);
             root.Controls.Add(contentViewport, 0, 2);
 
@@ -1764,7 +1782,7 @@ namespace AndroidADBTools
             };
             downloadViewport.HandleCreated += delegate
             {
-                SetWindowTheme(downloadViewport.Handle, "DarkMode_Explorer", null);
+                SetWindowTheme(downloadViewport.Handle, "Explorer", null);
             };
             tab.Controls.Add(downloadViewport);
 
@@ -1893,7 +1911,7 @@ namespace AndroidADBTools
                 "資料夾（保留結構）"
             });
             downloadModeComboBox.SelectedIndex = String.Equals(settings.DownloadMode, "Folder", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-            downloadModeComboBox.HandleCreated += delegate { SetWindowTheme(downloadModeComboBox.Handle, "DarkMode_Explorer", null); };
+            downloadModeComboBox.HandleCreated += delegate { SetWindowTheme(downloadModeComboBox.Handle, "Explorer", null); };
             incrementalDownloadCheck = new CheckBox
             {
                 Text = "記錄完整下載時間，下次只下載較新的檔案",
@@ -2082,12 +2100,12 @@ namespace AndroidADBTools
 
         private Panel NewCard()
         {
-            return new Panel { BackColor = Card, Margin = new Padding(0, 0, 0, 12) };
+            return new Panel { BackColor = Card, Margin = new Padding(0, 0, 0, 8) };
         }
 
         private TabPage NewTab(string text, Color accent)
         {
-            return new TabPage(text) { BackColor = Bg, ForeColor = TextColor, Padding = new Padding(0, 10, 0, 0), Tag = accent };
+            return new TabPage(text) { BackColor = Bg, ForeColor = TextColor, Padding = new Padding(10, 0, 0, 0), Tag = accent };
         }
 
         private Label NewSectionLabel(string text)
@@ -2286,15 +2304,15 @@ namespace AndroidADBTools
                 Width = width,
                 Height = 36,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = primary ? Accent : Card2,
-                ForeColor = Color.White,
+                BackColor = primary ? Accent : Color.White,
+                ForeColor = primary ? Color.White : TextColor,
                 Cursor = Cursors.Hand,
                 Margin = new Padding(5)
             };
             button.FlatAppearance.BorderSize = primary ? 0 : 1;
-            button.FlatAppearance.BorderColor = Color.FromArgb(60, 70, 86);
-            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(103, 171, 255) : Color.FromArgb(48, 58, 74);
-            button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(55, 125, 218) : Color.FromArgb(27, 33, 43);
+            button.FlatAppearance.BorderColor = Color.FromArgb(205, 214, 220);
+            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(31, 143, 128) : Color.FromArgb(235, 242, 242);
+            button.FlatAppearance.MouseDownBackColor = primary ? Color.FromArgb(24, 122, 109) : Color.FromArgb(224, 233, 234);
             button.Resize += delegate { ApplyRoundedRegion(button, 8); };
             ApplyRoundedRegion(button, 8);
             return button;
@@ -2333,7 +2351,7 @@ namespace AndroidADBTools
                 HeaderStyle = ColumnHeaderStyle.Nonclickable
             };
             list.OwnerDraw = true;
-            list.HandleCreated += delegate { SetWindowTheme(list.Handle, "DarkMode_Explorer", null); };
+            list.HandleCreated += delegate { SetWindowTheme(list.Handle, "Explorer", null); };
             list.DrawColumnHeader += DrawApkColumnHeader;
             list.DrawItem += delegate(object sender, DrawListViewItemEventArgs e) { };
             list.DrawSubItem += DrawApkSubItem;
@@ -2342,7 +2360,7 @@ namespace AndroidADBTools
             list.Columns.Add("狀態", 150);
             Panel headerCornerCover = new Panel
             {
-                BackColor = Color.FromArgb(25, 31, 41),
+                BackColor = Color.FromArgb(241, 244, 246),
                 Enabled = false,
                 TabStop = false
             };
@@ -2378,25 +2396,25 @@ namespace AndroidADBTools
 
         private void DrawApkColumnHeader(object sender, DrawListViewColumnHeaderEventArgs e)
         {
-            using (SolidBrush background = new SolidBrush(Color.FromArgb(25, 31, 41)))
-            using (Pen line = new Pen(Color.FromArgb(63, 75, 94)))
+            using (SolidBrush background = new SolidBrush(Color.FromArgb(241, 244, 246)))
+            using (Pen line = new Pen(Color.FromArgb(211, 219, 224)))
             {
                 e.Graphics.FillRectangle(background, e.Bounds);
                 e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
             }
             Rectangle textRect = new Rectangle(e.Bounds.X + 12, e.Bounds.Y, Math.Max(0, e.Bounds.Width - 16), e.Bounds.Height);
             using (Font headerFont = new Font(Font.FontFamily, 9.5F, FontStyle.Bold))
-                DrawSmoothText(e.Graphics, e.Header.Text, headerFont, Color.FromArgb(198, 209, 225), textRect,
+                DrawSmoothText(e.Graphics, e.Header.Text, headerFont, TextColor, textRect,
                     StringAlignment.Near, StringAlignment.Center, true);
         }
 
         private void DrawApkSubItem(object sender, DrawListViewSubItemEventArgs e)
         {
             bool selected = e.Item.Selected;
-            Color rowColor = selected ? Color.FromArgb(46, 91, 151) :
-                (e.ItemIndex % 2 == 0 ? Color.FromArgb(34, 41, 53) : Color.FromArgb(30, 37, 48));
+            Color rowColor = selected ? Color.FromArgb(218, 240, 236) :
+                (e.ItemIndex % 2 == 0 ? Color.White : Color.FromArgb(247, 249, 250));
             using (SolidBrush brush = new SolidBrush(rowColor)) e.Graphics.FillRectangle(brush, e.Bounds);
-            Color textColor = selected ? Color.White : TextColor;
+            Color textColor = selected ? Color.FromArgb(25, 112, 102) : TextColor;
             if (!selected && e.ColumnIndex == 2)
             {
                 string status = e.SubItem.Text ?? "";
@@ -2413,8 +2431,8 @@ namespace AndroidADBTools
         {
             if (e.Index < 0 || e.Index >= groupList.Items.Count) return;
             bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-            Color fill = selected ? Color.FromArgb(43, 82, 133) :
-                (e.Index % 2 == 0 ? Color.FromArgb(34, 41, 53) : Color.FromArgb(30, 37, 48));
+            Color fill = selected ? Color.FromArgb(224, 242, 239) :
+                (e.Index % 2 == 0 ? Color.White : Color.FromArgb(247, 249, 250));
             using (SolidBrush brush = new SolidBrush(fill)) e.Graphics.FillRectangle(brush, e.Bounds);
             if (selected)
             {
@@ -2458,9 +2476,9 @@ namespace AndroidADBTools
                     Math.Max(20, e.Bounds.Right - textLeft - horizontalPadding), nameHeight);
                 Rectangle countRect = new Rectangle(textLeft, contentTop + nameHeight + contentGap,
                     Math.Max(20, e.Bounds.Right - textLeft - horizontalPadding), countHeight);
-                DrawSmoothText(e.Graphics, name, groupList.Font, selected ? Color.White : TextColor, nameRect,
+                DrawSmoothText(e.Graphics, name, groupList.Font, selected ? Color.FromArgb(25, 112, 102) : TextColor, nameRect,
                     StringAlignment.Near, StringAlignment.Center, false);
-                DrawSmoothText(e.Graphics, count, countFont, selected ? Color.White : Muted, countRect,
+                DrawSmoothText(e.Graphics, count, countFont, selected ? Color.FromArgb(64, 128, 120) : Muted, countRect,
                     StringAlignment.Near, StringAlignment.Center, true);
             }
 
@@ -3455,7 +3473,7 @@ namespace AndroidADBTools
             Label compatibility = new Label
             {
                 Dock = DockStyle.Fill,
-                BackColor = Card2,
+                BackColor = Color.White,
                 ForeColor = Muted,
                 Padding = new Padding(14, 10, 14, 8),
                 Text = "正在檢查 ADB 版本與無線偵錯相容性…",
@@ -3677,7 +3695,7 @@ namespace AndroidADBTools
                 Margin = ScalePadding(new Padding(0, 2, 10, 2), scale),
                 Tag = hint
             };
-            input.HandleCreated += delegate { SetWindowTheme(input.Handle, "DarkMode_Explorer", null); };
+            input.HandleCreated += delegate { SetWindowTheme(input.Handle, "Explorer", null); };
             return input;
         }
 
@@ -3696,7 +3714,7 @@ namespace AndroidADBTools
                 ThousandsSeparator = false,
                 Margin = ScalePadding(new Padding(0, 2, 10, 2), scale)
             };
-            input.HandleCreated += delegate { SetWindowTheme(input.Handle, "DarkMode_Explorer", null); };
+            input.HandleCreated += delegate { SetWindowTheme(input.Handle, "Explorer", null); };
             return input;
         }
 
@@ -3716,7 +3734,7 @@ namespace AndroidADBTools
                 IntegralHeight = false,
                 HorizontalScrollbar = true
             };
-            list.HandleCreated += delegate { SetWindowTheme(list.Handle, "DarkMode_Explorer", null); };
+            list.HandleCreated += delegate { SetWindowTheme(list.Handle, "Explorer", null); };
             return list;
         }
 
@@ -4041,7 +4059,7 @@ namespace AndroidADBTools
                 Font = new Font(Font.FontFamily, 10.5F),
                 Padding = ScalePadding(new Padding(10), scale)
             };
-            text.HandleCreated += delegate { SetWindowTheme(text.Handle, "DarkMode_Explorer", null); };
+            text.HandleCreated += delegate { SetWindowTheme(text.Handle, "Explorer", null); };
             card.Controls.Add(text);
             page.Controls.Add(card);
             return page;
