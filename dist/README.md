@@ -12,7 +12,7 @@
 
 一套免安裝的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.4**
+目前版本：**v2.0.5**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
@@ -22,6 +22,9 @@
 - 內建 Wi-Fi 無線偵錯管理，可直接輸入手機 IP、配對 Port、六位數配對碼與偵錯 Port 完成配對、連線及中斷。
 - 保存已配對裝置紀錄，支援啟動時自動重新連線、mDNS 區域網路搜尋，以及 ADB 版本與相容性檢查。
 - 支援多裝置選擇，顯示型號、序號及 USB／Wi-Fi 標記並記住上次選擇；APK 可同時安裝到全部已連線裝置。
+- 「手機資訊」可讀取型號、處理器／SoC、核心與 ABI、記憶體、儲存空間、電池、螢幕、相機、Android 版本、安全性更新、序號及主要硬體功能，並標示每項資料來源。
+- 手機資訊支援一鍵複製完整摘要、雙擊複製單項內容，以及匯出 UTF-8 文字檔、Excel `.xlsx` 或 JSON；Excel 匯出不需要預先安裝 Microsoft Excel。Android 未公開的規格會明確標示而不使用推測值。
+- 手機資訊讀取後會依裝置識別保存本機快取；同一台手機再次連接或在多台手機之間切換時會自動帶入，並可強制更新或只清除目前手機的快取。
 - 建立多組「常用 APK 安裝」清單，一鍵依序安裝並顯示每個 APK 的結果。
 - APK 清單欄位過長時，可將滑鼠移到項目上查看完整檔名與完整位置。
 - 「我的組合」支援拖曳排序；自訂組合可雙擊直接編輯名稱，排序會自動保存。
@@ -89,8 +92,8 @@
 
 GitHub Release 提供兩種壓縮包：
 
-- `AndroidADBTools-v2.0.4.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
-- `AndroidADBTools-v2.0.4-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.5.zip`：標準版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.5-complete.zip`：Complete 版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
 
 1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的 ZIP 並完整解壓縮。
 2. 執行 `AndroidADBTools.exe`。

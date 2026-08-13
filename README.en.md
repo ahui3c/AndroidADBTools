@@ -12,7 +12,7 @@
 
 A portable Windows GUI for ADB that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.4**
+Current version: **v2.0.5**
 
 [View the complete changelog](CHANGELOG.md)
 
@@ -22,6 +22,9 @@ Current version: **v2.0.4**
 - Includes a Wi-Fi debugging manager for pairing, connecting, and disconnecting with the phone IP, pairing port, six-digit code, and debugging port.
 - Saves paired-device records, supports automatic reconnection at startup, discovers LAN devices through mDNS, and checks ADB version compatibility.
 - Supports multiple connected devices with model, serial, and USB/Wi-Fi labels, remembers the last primary device, and can install APKs to every connected device.
+- The **Device Information** module reads the model, processor/SoC, cores and ABIs, memory, storage, battery, display, camera, Android version, security patch, serial numbers, and notable hardware features, with the ADB source shown for every field.
+- Device information can be copied as a complete summary, copied one field at a time by double-clicking, or exported as UTF-8 text, an Excel `.xlsx` workbook, or JSON. Excel export does not require Microsoft Excel to be installed. Specifications not exposed by Android are identified as unavailable instead of being guessed.
+- Device information is cached locally per device after a successful read. Reconnecting the same phone or switching among multiple phones restores the matching cache automatically, with actions to force a refresh or clear only the current phone's cache.
 - Creates multiple reusable APK groups and installs every APK sequentially with per-file status reporting.
 - Hover over an APK list item to view its complete file name and full path when columns are truncated.
 - Reorders groups by drag and drop; custom groups can be renamed by double-clicking, and the order is saved automatically.
@@ -89,8 +92,8 @@ Use the latest version from the official page. Google states that current Platfo
 
 Each GitHub Release provides two archives:
 
-- `AndroidADBTools-v2.0.4.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
-- `AndroidADBTools-v2.0.4-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.5.zip`: the standard package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.5-complete.zip`: the Complete package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
 
 1. Choose the ZIP you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases) and extract the entire archive.
 2. Run `AndroidADBTools.exe`.

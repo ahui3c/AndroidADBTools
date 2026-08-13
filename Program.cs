@@ -21,6 +21,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -32,8 +33,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.4.0")]
-[assembly: AssemblyFileVersion("2.0.4.0")]
+[assembly: AssemblyVersion("2.0.5.0")]
+[assembly: AssemblyFileVersion("2.0.5.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -212,6 +213,69 @@ namespace AndroidADBTools
         }
     }
 
+    public sealed class CopyDeviceField
+    {
+        public string Name { get; private set; }
+        public string Value { get; private set; }
+
+        public CopyDeviceField(string name, string value)
+        {
+            Name = name ?? "";
+            Value = value ?? "";
+        }
+    }
+
+    public sealed class DeviceInformationField
+    {
+        public string Category { get; set; }
+        public string Name { get; set; }
+        public string Value { get; set; }
+        public string Source { get; set; }
+
+        public DeviceInformationField()
+        {
+            Category = "";
+            Name = "";
+            Value = "";
+            Source = "";
+        }
+    }
+
+    public sealed class DeviceInformationReport
+    {
+        public string DeviceName { get; set; }
+        public string DeviceSerial { get; set; }
+        public DateTime GeneratedAt { get; set; }
+        public List<DeviceInformationField> Fields { get; set; }
+
+        public DeviceInformationReport()
+        {
+            DeviceName = "Android 裝置";
+            DeviceSerial = "";
+            GeneratedAt = DateTime.Now;
+            Fields = new List<DeviceInformationField>();
+        }
+    }
+
+    public sealed class DeviceInformationCacheEntry
+    {
+        public int SchemaVersion { get; set; }
+        public string AndroidId { get; set; }
+        public string SystemSerial { get; set; }
+        public List<string> AdbSerials { get; set; }
+        public DateTime SavedAt { get; set; }
+        public DeviceInformationReport Report { get; set; }
+
+        public DeviceInformationCacheEntry()
+        {
+            SchemaVersion = 1;
+            AndroidId = "";
+            SystemSerial = "";
+            AdbSerials = new List<string>();
+            SavedAt = DateTime.Now;
+        }
+    }
+
     public sealed class MdnsServiceInfo
     {
         public string Name { get; set; }
@@ -359,6 +423,7 @@ namespace AndroidADBTools
 
         private AppSettings settings;
         private readonly string settingsFile;
+        private readonly string deviceInformationCacheFolder;
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private bool busy;
         private bool quickInstalling;
@@ -369,7 +434,8 @@ namespace AndroidADBTools
 
         private Label adbStatusLabel;
         private Label deviceStatusLabel;
-        private Label deviceDetailLabel;
+        private LinkLabel deviceDetailLabel;
+        private ToolTip deviceCopyToolTip;
         private ComboBox deviceSelector;
         private CheckBox installAllDevicesCheck;
         private bool updatingDeviceSelector;
@@ -454,6 +520,15 @@ namespace AndroidADBTools
         private Point groupDragStartPoint;
         private ModernTabControl mainTabs;
         private TabPage brightnessTabPage;
+        private ListView deviceInformationList;
+        private Label deviceInformationStatusLabel;
+        private Button readDeviceInformationButton;
+        private Button copyDeviceInformationButton;
+        private Button exportDeviceInformationButton;
+        private Button clearDeviceInformationCacheButton;
+        private DeviceInformationReport currentDeviceInformationReport;
+        private string currentDeviceInformationCachePath = "";
+        private int deviceInformationCacheLoadToken;
         private readonly Dictionary<Control, DpiMetric> dpiMetrics = new Dictionary<Control, DpiMetric>();
         private readonly List<ApkGroup> folderGroups = new List<ApkGroup>();
         private float currentDpiScale = 1F;
@@ -462,6 +537,7 @@ namespace AndroidADBTools
         {
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AndroidADBTools");
             settingsFile = Path.Combine(folder, "settings.json");
+            deviceInformationCacheFolder = Path.Combine(folder, "device-information-cache");
             settings = LoadSettings();
 
             Text = "Android ADB 快速工具";
@@ -580,15 +656,27 @@ namespace AndroidADBTools
                 Location = new Point(178, 11),
                 Height = 27
             };
-            deviceDetailLabel = new Label
+            deviceDetailLabel = new LinkLabel
             {
                 Text = "請開啟 USB 偵錯並連接手機",
                 ForeColor = Muted,
+                LinkColor = Color.FromArgb(58, 103, 150),
+                ActiveLinkColor = Accent,
+                VisitedLinkColor = Color.FromArgb(58, 103, 150),
+                LinkBehavior = LinkBehavior.HoverUnderline,
                 AutoSize = false,
                 AutoEllipsis = true,
                 Location = new Point(20, 48),
                 Height = 23
             };
+            deviceCopyToolTip = new ToolTip
+            {
+                InitialDelay = 100,
+                ReshowDelay = 50,
+                AutoPopDelay = 1800,
+                ShowAlways = true
+            };
+            deviceDetailLabel.LinkClicked += DeviceDetailLinkClicked;
             deviceCard.Controls.Add(adbStatusLabel);
             deviceCard.Controls.Add(deviceStatusLabel);
             deviceCard.Controls.Add(deviceDetailLabel);
@@ -689,12 +777,14 @@ namespace AndroidADBTools
             TabPage brightnessTab = NewTab("☀  亮度調整", Color.FromArgb(211, 132, 42));
             brightnessTabPage = brightnessTab;
             TabPage quickSettingsTab = NewTab("⚙  快速設定", Color.FromArgb(32, 151, 116));
+            TabPage deviceInformationTab = NewTab("ⓘ  手機資訊", Color.FromArgb(38, 158, 142));
             TabPage downloadTab = NewTab("↓  資料下載", Color.FromArgb(35, 156, 181));
             TabPage logTab = NewTab("≡  執行紀錄", Color.FromArgb(88, 103, 128));
             mainTabs.TabPages.Add(groupsTab);
             mainTabs.TabPages.Add(singleTab);
             mainTabs.TabPages.Add(brightnessTab);
             mainTabs.TabPages.Add(quickSettingsTab);
+            mainTabs.TabPages.Add(deviceInformationTab);
             mainTabs.TabPages.Add(downloadTab);
             mainTabs.TabPages.Add(logTab);
             root.Controls.Add(mainTabs, 0, 2);
@@ -703,6 +793,7 @@ namespace AndroidADBTools
             BuildSingleTab(singleTab);
             BuildBrightnessTab(brightnessTab);
             BuildQuickSettingsTab(quickSettingsTab);
+            BuildDeviceInformationTab(deviceInformationTab);
             BuildDownloadTab(downloadTab);
             BuildLogTab(logTab);
         }
@@ -1771,6 +1862,119 @@ namespace AndroidADBTools
             root.Controls.Add(actions, 0, 4);
         }
 
+        private void BuildDeviceInformationTab(TabPage tab)
+        {
+            Panel outer = NewCard();
+            outer.Dock = DockStyle.Fill;
+            outer.Padding = new Padding(18);
+            tab.Controls.Add(outer);
+
+            TableLayoutPanel root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card,
+                ColumnCount = 1,
+                RowCount = 6,
+                Margin = new Padding(0)
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            outer.Controls.Add(root);
+
+            Label title = new Label
+            {
+                Text = "手機詳細資訊",
+                ForeColor = TextColor,
+                Font = new Font(Font.FontFamily, 17F, FontStyle.Bold),
+                Dock = DockStyle.Fill
+            };
+            Label hint = new Label
+            {
+                Text = "讀取 Android 系統實際公開的裝置、硬體、效能、電池、螢幕、相機與識別資訊。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill
+            };
+            root.Controls.Add(title, 0, 0);
+            root.Controls.Add(hint, 0, 1);
+
+            FlowLayoutPanel actions = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                BackColor = Card,
+                Margin = new Padding(0)
+            };
+            readDeviceInformationButton = NewButton("讀取／強制更新", true, 158);
+            copyDeviceInformationButton = NewButton("複製完整資訊", false, 142);
+            exportDeviceInformationButton = NewButton("匯出資訊", false, 112);
+            clearDeviceInformationCacheButton = NewButton("清除目前手機快取", false, 158);
+            copyDeviceInformationButton.Enabled = false;
+            exportDeviceInformationButton.Enabled = false;
+            clearDeviceInformationCacheButton.Enabled = false;
+            readDeviceInformationButton.Click += async delegate { await ReadDeviceInformationAsync(); };
+            copyDeviceInformationButton.Click += delegate { CopyCompleteDeviceInformation(); };
+            exportDeviceInformationButton.Click += delegate { ExportDeviceInformation(); };
+            clearDeviceInformationCacheButton.Click += delegate { ClearCurrentDeviceInformationCache(); };
+            actions.Controls.Add(readDeviceInformationButton);
+            actions.Controls.Add(copyDeviceInformationButton);
+            actions.Controls.Add(exportDeviceInformationButton);
+            actions.Controls.Add(clearDeviceInformationCacheButton);
+            root.Controls.Add(actions, 0, 2);
+
+            deviceInformationStatusLabel = new Label
+            {
+                Text = "連接手機後會自動載入本機快取；首次使用請按「讀取／強制更新」。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            root.Controls.Add(deviceInformationStatusLabel, 0, 3);
+
+            deviceInformationList = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                HideSelection = false,
+                MultiSelect = false,
+                BackColor = Color.White,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            deviceInformationList.Columns.Add("分類", 132);
+            deviceInformationList.Columns.Add("資訊項目", 210);
+            deviceInformationList.Columns.Add("內容", 690);
+            deviceInformationList.Columns.Add("資料來源", 150);
+            deviceInformationList.HandleCreated += delegate { SetWindowTheme(deviceInformationList.Handle, "Explorer", null); };
+            deviceInformationList.Resize += delegate { ResizeDeviceInformationColumns(); };
+            deviceInformationList.DoubleClick += delegate { CopySelectedDeviceInformationValue(); };
+            root.Controls.Add(deviceInformationList, 0, 4);
+
+            Label footer = new Label
+            {
+                Text = "提示：每台手機會依識別資訊分開快取；雙擊任一列可複製內容。完整匯出包含序號與 Android ID。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            root.Controls.Add(footer, 0, 5);
+        }
+
+        private void ResizeDeviceInformationColumns()
+        {
+            if (deviceInformationList == null || deviceInformationList.Columns.Count < 4) return;
+            int fixedWidth = ScaleValue(132 + 210 + 150, currentDpiScale);
+            deviceInformationList.Columns[2].Width = Math.Max(260,
+                deviceInformationList.ClientSize.Width - fixedWidth - ScaleValue(8, currentDpiScale));
+        }
+
         private void BuildDownloadTab(TabPage tab)
         {
             Panel downloadViewport = new Panel
@@ -2228,7 +2432,8 @@ namespace AndroidADBTools
             foreach (Control control in dpiMetrics.Keys)
             {
                 ListView list = control as ListView;
-                if (list != null) ResizeApkListColumns(list);
+                if (list == apkList) ResizeApkListColumns(list);
+                else if (list == deviceInformationList) ResizeDeviceInformationColumns();
                 control.Invalidate();
             }
         }
@@ -2943,13 +3148,14 @@ namespace AndroidADBTools
             refreshButton.Enabled = false;
             devices.Clear();
             RefreshDeviceSelector(new List<DeviceInfo>());
+            ClearDeviceInformationDisplay("正在檢查手機連線與本機快取...", Muted);
             string adb = FindAdb();
             if (String.IsNullOrWhiteSpace(adb))
             {
                 adbStatusLabel.Text = "● 找不到 ADB";
                 adbStatusLabel.ForeColor = Red;
                 deviceStatusLabel.Text = "尚未安裝或指定 Android Platform Tools";
-                deviceDetailLabel.Text = "按右側「選擇 adb.exe」指定檔案";
+                SetDeviceDetail("按右側「選擇 adb.exe」指定檔案", null);
                 Log("找不到 adb.exe，請指定 Android SDK platform-tools 內的 adb.exe。");
                 busy = false;
                 refreshButton.Enabled = true;
@@ -2960,7 +3166,7 @@ namespace AndroidADBTools
             adbStatusLabel.Text = "● ADB 已就緒";
             adbStatusLabel.ForeColor = Green;
             deviceStatusLabel.Text = "正在檢查手機連線...";
-            deviceDetailLabel.Text = adb;
+            SetDeviceDetail(adb, null);
             Log("使用 ADB：" + adb);
             AdbResult result = await RunAdbAsync("devices -l");
             if (!result.Started || result.ExitCode != 0)
@@ -2968,7 +3174,7 @@ namespace AndroidADBTools
                 adbStatusLabel.Text = "● ADB 執行失敗";
                 adbStatusLabel.ForeColor = Red;
                 deviceStatusLabel.Text = "無法啟動 ADB";
-                deviceDetailLabel.Text = CleanOutput(result.Error);
+                SetDeviceDetail(CleanOutput(result.Error), null);
                 Log("ADB 錯誤：" + CleanOutput(result.Error));
                 RefreshDeviceSelector(new List<DeviceInfo>());
             }
@@ -2979,6 +3185,7 @@ namespace AndroidADBTools
             }
             busy = false;
             refreshButton.Enabled = true;
+            await LoadSelectedDeviceInformationCacheAsync();
             await RefreshDownloadCheckpointStatusAsync();
         }
 
@@ -3047,6 +3254,7 @@ namespace AndroidADBTools
             settings.SelectedDeviceSerial = selected.Serial;
             SaveSettings();
             UpdateDeviceSelectionDetail();
+            await LoadSelectedDeviceInformationCacheAsync();
             await RefreshDownloadCheckpointStatusAsync();
         }
 
@@ -3066,9 +3274,47 @@ namespace AndroidADBTools
             if (primary == null) return;
             bool all = installAllDevicesCheck != null && installAllDevicesCheck.Enabled &&
                 installAllDevicesCheck.Checked;
-            deviceDetailLabel.Text = all
+            string detail = all
                 ? "APK 安裝目標：全部 " + ready.Count + " 台　｜　其他功能：" + primary
                 : "目前操作：" + primary;
+            SetDeviceDetail(detail, primary);
+        }
+
+        private void SetDeviceDetail(string text, DeviceInfo device)
+        {
+            if (deviceDetailLabel == null) return;
+            deviceDetailLabel.Links.Clear();
+            deviceDetailLabel.Text = text ?? "";
+            if (device == null) return;
+
+            string model = device.DisplayName ?? "";
+            string serial = device.Serial ?? "";
+            int modelStart = deviceDetailLabel.Text.IndexOf(model, StringComparison.Ordinal);
+            if (model.Length > 0 && modelStart >= 0)
+                deviceDetailLabel.Links.Add(modelStart, model.Length,
+                    new CopyDeviceField("機型名稱", model));
+            int serialStart = deviceDetailLabel.Text.IndexOf(serial,
+                Math.Max(0, modelStart + model.Length), StringComparison.Ordinal);
+            if (serial.Length > 0 && serialStart >= 0)
+                deviceDetailLabel.Links.Add(serialStart, serial.Length,
+                    new CopyDeviceField("序號", serial));
+        }
+
+        private void DeviceDetailLinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            CopyDeviceField field = e.Link.LinkData as CopyDeviceField;
+            if (field == null || String.IsNullOrWhiteSpace(field.Value)) return;
+            try
+            {
+                Clipboard.SetText(field.Value);
+                deviceCopyToolTip.Show("已複製" + field.Name + "：" + field.Value,
+                    deviceDetailLabel, 0, -ScaleValue(28, currentDpiScale), 1800);
+            }
+            catch (ExternalException)
+            {
+                deviceCopyToolTip.Show("剪貼簿忙碌，請再點一次",
+                    deviceDetailLabel, 0, -ScaleValue(28, currentDpiScale), 1800);
+            }
         }
 
         private void UpdateDeviceCard()
@@ -3103,21 +3349,21 @@ namespace AndroidADBTools
             {
                 deviceStatusLabel.Text = "手機尚未允許 USB 偵錯";
                 deviceStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
-                deviceDetailLabel.Text = "請解鎖手機，在 USB 偵錯授權視窗按「允許」，再重新檢查";
+                SetDeviceDetail("請解鎖手機，在 USB 偵錯授權視窗按「允許」，再重新檢查", null);
                 Log("偵測到未授權裝置：" + unauthorized[0].Serial);
             }
             else if (offline.Count > 0)
             {
                 deviceStatusLabel.Text = "手機連線離線";
                 deviceStatusLabel.ForeColor = Red;
-                deviceDetailLabel.Text = "請重新插拔 USB，切換 USB 偵錯後再重新檢查";
+                SetDeviceDetail("請重新插拔 USB，切換 USB 偵錯後再重新檢查", null);
                 Log("裝置離線：" + offline[0].Serial);
             }
             else
             {
                 deviceStatusLabel.Text = "找不到已連線的手機";
                 deviceStatusLabel.ForeColor = Red;
-                deviceDetailLabel.Text = "確認 USB 線可傳輸資料，且已開啟開發人員選項與 USB 偵錯";
+                SetDeviceDetail("確認 USB 線可傳輸資料，且已開啟開發人員選項與 USB 偵錯", null);
                 Log("ADB 正常，但目前沒有偵測到手機。");
             }
         }
@@ -3420,7 +3666,7 @@ namespace AndroidADBTools
                     Dock = DockStyle.Fill,
                     BackColor = Bg,
                     Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold),
-                    ItemSize = ScaleSize(new Size(250, 44), scale)
+                    ItemSize = ScaleSize(new Size(44, 250), scale)
                 };
                 tabs.TabPages.Add(CreateWifiConnectionPage(form));
                 tabs.TabPages.Add(CreateConnectionHelpPage("USB 連線教學", Color.FromArgb(53, 120, 219), UsbConnectionHelpText()));
@@ -4543,6 +4789,955 @@ namespace AndroidADBTools
                 if (remembered != null) return remembered;
             }
             return ready[0];
+        }
+
+        private async Task LoadSelectedDeviceInformationCacheAsync()
+        {
+            if (deviceInformationList == null || deviceInformationStatusLabel == null) return;
+            int loadToken = ++deviceInformationCacheLoadToken;
+            DeviceInfo device = ReadyDevice();
+            if (device == null)
+            {
+                ClearDeviceInformationDisplay("尚未連接可用的手機。", Muted);
+                return;
+            }
+            ClearDeviceInformationDisplay("正在載入 " + device.DisplayName + " 的本機快取...", Muted);
+
+            List<Tuple<string, DeviceInformationCacheEntry>> cacheFiles = LoadDeviceInformationCacheFiles();
+            Tuple<string, DeviceInformationCacheEntry> match = FindDeviceInformationCache(cacheFiles, device.Serial, "", "");
+            if (match == null && cacheFiles.Count > 0)
+            {
+                deviceInformationStatusLabel.Text = "正在比對 " + device.DisplayName + " 的本機快取...";
+                deviceInformationStatusLabel.ForeColor = Muted;
+                AdbResult androidIdResult = await RunDeviceShellAsync(device, "settings get secure android_id");
+                if (loadToken != deviceInformationCacheLoadToken || !IsCurrentDevice(device.Serial)) return;
+                AdbResult systemSerialResult = await RunDeviceShellAsync(device, "getprop ro.serialno");
+                if (loadToken != deviceInformationCacheLoadToken || !IsCurrentDevice(device.Serial)) return;
+                string systemSerial = NormalizeDeviceInformationIdentity(FirstOutputLine(OutputOf(systemSerialResult)));
+                if (systemSerial.Length == 0)
+                {
+                    systemSerialResult = await RunDeviceShellAsync(device, "getprop ro.boot.serialno");
+                    if (loadToken != deviceInformationCacheLoadToken || !IsCurrentDevice(device.Serial)) return;
+                    systemSerial = NormalizeDeviceInformationIdentity(FirstOutputLine(OutputOf(systemSerialResult)));
+                }
+                string androidId = NormalizeDeviceInformationIdentity(FirstOutputLine(OutputOf(androidIdResult)));
+                if (androidId.Length > 0 || systemSerial.Length > 0)
+                    match = FindDeviceInformationCache(cacheFiles, device.Serial, androidId, systemSerial);
+            }
+            if (loadToken != deviceInformationCacheLoadToken || !IsCurrentDevice(device.Serial)) return;
+
+            if (match == null || match.Item2 == null || match.Item2.Report == null ||
+                match.Item2.Report.Fields == null || match.Item2.Report.Fields.Count == 0)
+            {
+                ClearDeviceInformationDisplay("此手機尚無本機快取；請按「讀取／強制更新」建立資料。", Muted);
+                return;
+            }
+
+            DeviceInformationCacheEntry entry = match.Item2;
+            bool aliasAdded = !entry.AdbSerials.Any(delegate(string serial)
+            {
+                return String.Equals(serial, device.Serial, StringComparison.OrdinalIgnoreCase);
+            });
+            if (aliasAdded) entry.AdbSerials.Add(device.Serial);
+            PrepareCachedDeviceInformationForCurrentConnection(entry.Report, device);
+            if (aliasAdded) TryWriteDeviceInformationCache(match.Item1, entry);
+
+            currentDeviceInformationReport = entry.Report;
+            currentDeviceInformationCachePath = match.Item1;
+            PopulateDeviceInformationList(entry.Report);
+            copyDeviceInformationButton.Enabled = true;
+            exportDeviceInformationButton.Enabled = true;
+            clearDeviceInformationCacheButton.Enabled = true;
+            DateTime cacheTime = entry.SavedAt == default(DateTime) ? entry.Report.GeneratedAt : entry.SavedAt;
+            deviceInformationStatusLabel.Text = "已自動載入 " + entry.Report.DeviceName + " 的本機快取：共 " +
+                entry.Report.Fields.Count + " 項，快取時間 " + cacheTime.ToString("yyyy/MM/dd HH:mm:ss") + "。";
+            deviceInformationStatusLabel.ForeColor = Green;
+            Log("已載入手機資訊快取：" + entry.Report.DeviceName + "（" + device.Serial + "）。");
+        }
+
+        private bool IsCurrentDevice(string serial)
+        {
+            DeviceInfo current = ReadyDevice();
+            return current != null && String.Equals(current.Serial, serial, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void ClearDeviceInformationDisplay(string message, Color color)
+        {
+            currentDeviceInformationReport = null;
+            currentDeviceInformationCachePath = "";
+            if (deviceInformationList != null)
+            {
+                deviceInformationList.Items.Clear();
+                deviceInformationList.Groups.Clear();
+            }
+            if (copyDeviceInformationButton != null) copyDeviceInformationButton.Enabled = false;
+            if (exportDeviceInformationButton != null) exportDeviceInformationButton.Enabled = false;
+            if (clearDeviceInformationCacheButton != null) clearDeviceInformationCacheButton.Enabled = false;
+            if (deviceInformationStatusLabel != null)
+            {
+                deviceInformationStatusLabel.Text = message;
+                deviceInformationStatusLabel.ForeColor = color;
+            }
+        }
+
+        private List<Tuple<string, DeviceInformationCacheEntry>> LoadDeviceInformationCacheFiles()
+        {
+            List<Tuple<string, DeviceInformationCacheEntry>> files = new List<Tuple<string, DeviceInformationCacheEntry>>();
+            try
+            {
+                if (!Directory.Exists(deviceInformationCacheFolder)) return files;
+                JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue };
+                foreach (string path in Directory.GetFiles(deviceInformationCacheFolder, "*.json", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        DeviceInformationCacheEntry entry = serializer.Deserialize<DeviceInformationCacheEntry>(
+                            File.ReadAllText(path, Encoding.UTF8));
+                        if (entry == null || entry.Report == null) continue;
+                        if (entry.AdbSerials == null) entry.AdbSerials = new List<string>();
+                        if (entry.Report.Fields == null) entry.Report.Fields = new List<DeviceInformationField>();
+                        files.Add(Tuple.Create(path, entry));
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("略過無法讀取的手機資訊快取：" + Path.GetFileName(path) + "；" + ex.Message);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("手機資訊快取讀取失敗：" + ex.Message);
+            }
+            return files;
+        }
+
+        private static Tuple<string, DeviceInformationCacheEntry> FindDeviceInformationCache(
+            IEnumerable<Tuple<string, DeviceInformationCacheEntry>> files, string adbSerial, string androidId, string systemSerial)
+        {
+            string normalizedAndroidId = NormalizeDeviceInformationIdentity(androidId);
+            string normalizedSystemSerial = NormalizeDeviceInformationIdentity(systemSerial);
+            foreach (Tuple<string, DeviceInformationCacheEntry> file in files)
+            {
+                DeviceInformationCacheEntry entry = file.Item2;
+                if (!String.IsNullOrWhiteSpace(adbSerial) && entry.AdbSerials.Any(delegate(string serial)
+                    { return String.Equals(serial, adbSerial, StringComparison.OrdinalIgnoreCase); })) return file;
+                if (!String.IsNullOrWhiteSpace(adbSerial) && entry.Report != null &&
+                    String.Equals(entry.Report.DeviceSerial, adbSerial, StringComparison.OrdinalIgnoreCase)) return file;
+            }
+            foreach (Tuple<string, DeviceInformationCacheEntry> file in files)
+            {
+                DeviceInformationCacheEntry entry = file.Item2;
+                if (normalizedSystemSerial.Length > 0 && String.Equals(NormalizeDeviceInformationIdentity(
+                    entry.SystemSerial), normalizedSystemSerial, StringComparison.OrdinalIgnoreCase)) return file;
+            }
+            foreach (Tuple<string, DeviceInformationCacheEntry> file in files)
+            {
+                DeviceInformationCacheEntry entry = file.Item2;
+                if (normalizedAndroidId.Length > 0 && String.Equals(NormalizeDeviceInformationIdentity(
+                    entry.AndroidId), normalizedAndroidId, StringComparison.OrdinalIgnoreCase)) return file;
+            }
+            return null;
+        }
+
+        private string SaveDeviceInformationCache(DeviceInformationReport report)
+        {
+            string androidId = NormalizeDeviceInformationIdentity(DeviceInformationFieldValue(report, "Android ID"));
+            string systemSerial = NormalizeDeviceInformationIdentity(DeviceInformationFieldValue(report, "系統序號"));
+            List<Tuple<string, DeviceInformationCacheEntry>> files = LoadDeviceInformationCacheFiles();
+            Tuple<string, DeviceInformationCacheEntry> existing = FindDeviceInformationCache(
+                files, report.DeviceSerial, androidId, systemSerial);
+            DeviceInformationCacheEntry entry = existing == null ? new DeviceInformationCacheEntry() : existing.Item2;
+            entry.AndroidId = androidId;
+            entry.SystemSerial = systemSerial;
+            if (entry.AdbSerials == null) entry.AdbSerials = new List<string>();
+            if (!entry.AdbSerials.Any(delegate(string serial)
+                { return String.Equals(serial, report.DeviceSerial, StringComparison.OrdinalIgnoreCase); }))
+                entry.AdbSerials.Add(report.DeviceSerial);
+            entry.SavedAt = DateTime.Now;
+            entry.Report = report;
+
+            Directory.CreateDirectory(deviceInformationCacheFolder);
+            string path = existing == null
+                ? Path.Combine(deviceInformationCacheFolder, "device-" + DeviceInformationCacheKey(
+                    FirstNonEmpty(androidId, systemSerial, report.DeviceSerial)) + ".json")
+                : existing.Item1;
+            if (!TryWriteDeviceInformationCache(path, entry)) return "";
+            return path;
+        }
+
+        private bool TryWriteDeviceInformationCache(string path, DeviceInformationCacheEntry entry)
+        {
+            string temporaryPath = path + ".tmp";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue };
+                File.WriteAllText(temporaryPath, serializer.Serialize(entry), new UTF8Encoding(false));
+                File.Copy(temporaryPath, path, true);
+                File.Delete(temporaryPath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+                Log("手機資訊快取儲存失敗：" + ex.Message);
+                return false;
+            }
+        }
+
+        private static string DeviceInformationCacheKey(string identity)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(identity ?? "Android"));
+                return BitConverter.ToString(hash).Replace("-", "").Substring(0, 24).ToLowerInvariant();
+            }
+        }
+
+        private static string NormalizeDeviceInformationIdentity(string value)
+        {
+            string normalized = (value ?? "").Trim();
+            if (normalized.Length == 0 || normalized == "未回報" || normalized == "null" ||
+                normalized.IndexOf("無法讀取", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                normalized.IndexOf("權限", StringComparison.OrdinalIgnoreCase) >= 0) return "";
+            return normalized;
+        }
+
+        private static string DeviceInformationFieldValue(DeviceInformationReport report, string name)
+        {
+            if (report == null || report.Fields == null) return "";
+            DeviceInformationField field = report.Fields.FirstOrDefault(delegate(DeviceInformationField item)
+            {
+                return String.Equals(item.Name, name, StringComparison.Ordinal);
+            });
+            return field == null ? "" : field.Value;
+        }
+
+        private static void PrepareCachedDeviceInformationForCurrentConnection(DeviceInformationReport report, DeviceInfo device)
+        {
+            if (report == null || device == null) return;
+            report.DeviceSerial = device.Serial;
+            if (String.IsNullOrWhiteSpace(report.DeviceName) || report.DeviceName == "Android 裝置")
+                report.DeviceName = device.DisplayName;
+            foreach (DeviceInformationField field in report.Fields)
+            {
+                if (field.Name == "ADB 序號") field.Value = device.Serial;
+                else if (field.Name == "ADB 連線方式") field.Value = device.ConnectionLabel;
+            }
+        }
+
+        private void ClearCurrentDeviceInformationCache()
+        {
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            string path = currentDeviceInformationCachePath;
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                Tuple<string, DeviceInformationCacheEntry> match = FindDeviceInformationCache(
+                    LoadDeviceInformationCacheFiles(), device.Serial, "", "");
+                if (match != null) path = match.Item1;
+            }
+            if (String.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                ClearDeviceInformationDisplay("此手機沒有可清除的本機快取。", Muted);
+                return;
+            }
+            DialogResult answer = MessageBox.Show(this,
+                "確定要清除「" + device.DisplayName + "」的手機資訊快取嗎？\n\n其他手機的快取不會受到影響。",
+                "清除手機資訊快取", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (answer != DialogResult.Yes) return;
+            try
+            {
+                File.Delete(path);
+                ++deviceInformationCacheLoadToken;
+                ClearDeviceInformationDisplay("已清除此手機的本機快取；需要時可按「讀取／強制更新」重新建立。", Green);
+                Log("已清除手機資訊快取：" + device.DisplayName + "（" + device.Serial + "）。");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "無法清除手機資訊快取。\n\n" + ex.Message,
+                    "清除失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private async Task ReadDeviceInformationAsync()
+        {
+            if (busy) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            DeviceInformationReport previousReport = currentDeviceInformationReport;
+            string previousCachePath = currentDeviceInformationCachePath;
+
+            ++deviceInformationCacheLoadToken;
+            busy = true;
+            SetInstallButtons(false);
+            readDeviceInformationButton.Enabled = false;
+            copyDeviceInformationButton.Enabled = false;
+            exportDeviceInformationButton.Enabled = false;
+            clearDeviceInformationCacheButton.Enabled = false;
+            deviceInformationStatusLabel.Text = "正在讀取 " + device.DisplayName + " 的詳細資訊，可能需要數秒...";
+            deviceInformationStatusLabel.ForeColor = Color.FromArgb(191, 128, 31);
+            deviceInformationList.Items.Clear();
+            deviceInformationList.Groups.Clear();
+            currentDeviceInformationReport = null;
+            currentDeviceInformationCachePath = "";
+
+            try
+            {
+                DeviceInformationReport report = await CollectDeviceInformationAsync(device);
+                currentDeviceInformationReport = report;
+                currentDeviceInformationCachePath = SaveDeviceInformationCache(report);
+                PopulateDeviceInformationList(report);
+                copyDeviceInformationButton.Enabled = report.Fields.Count > 0;
+                exportDeviceInformationButton.Enabled = report.Fields.Count > 0;
+                deviceInformationStatusLabel.Text = "已讀取 " + report.DeviceName + "：共 " + report.Fields.Count +
+                    " 項資訊，更新時間 " + report.GeneratedAt.ToString("yyyy/MM/dd HH:mm:ss") +
+                    (currentDeviceInformationCachePath.Length > 0 ? "，並已保存本機快取。" : "；但本機快取儲存失敗。" );
+                deviceInformationStatusLabel.ForeColor = Green;
+                Log("手機資訊讀取完成：" + report.DeviceName + "，共 " + report.Fields.Count + " 項。");
+            }
+            catch (Exception ex)
+            {
+                if (previousReport != null && previousReport.Fields != null && previousReport.Fields.Count > 0)
+                {
+                    currentDeviceInformationReport = previousReport;
+                    currentDeviceInformationCachePath = previousCachePath;
+                    PopulateDeviceInformationList(previousReport);
+                }
+                deviceInformationStatusLabel.Text = "手機資訊強制更新失敗：" + ex.Message +
+                    (currentDeviceInformationReport != null ? "；目前仍顯示先前快取。" : "");
+                deviceInformationStatusLabel.ForeColor = Red;
+                Log("手機資訊強制更新失敗：" + ex);
+                MessageBox.Show(this, "無法讀取手機資訊。\n\n" + ex.Message,
+                    "手機資訊", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+                readDeviceInformationButton.Enabled = true;
+                copyDeviceInformationButton.Enabled = currentDeviceInformationReport != null && currentDeviceInformationReport.Fields.Count > 0;
+                exportDeviceInformationButton.Enabled = copyDeviceInformationButton.Enabled;
+                clearDeviceInformationCacheButton.Enabled = currentDeviceInformationCachePath.Length > 0 &&
+                    File.Exists(currentDeviceInformationCachePath);
+            }
+        }
+
+        private async Task<DeviceInformationReport> CollectDeviceInformationAsync(DeviceInfo device)
+        {
+            // Run the device queries sequentially. Some OEM ADB daemons become unstable when
+            // many shell sessions are opened at once, especially for large dumpsys responses.
+            AdbResult propertiesResult = await RunDeviceShellAsync(device, "getprop");
+            AdbResult cpuResult = await RunDeviceShellAsync(device, "cat /proc/cpuinfo");
+            AdbResult cpuFrequencyResult = await RunDeviceShellAsync(device,
+                "cat /sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq 2>/dev/null");
+            AdbResult memoryResult = await RunDeviceShellAsync(device, "cat /proc/meminfo");
+            AdbResult batteryResult = await RunDeviceShellAsync(device, "dumpsys battery");
+            AdbResult batteryDesignResult = await RunDeviceShellAsync(device,
+                "cat /sys/class/power_supply/battery/charge_full_design 2>/dev/null");
+            AdbResult batteryFullResult = await RunDeviceShellAsync(device,
+                "cat /sys/class/power_supply/battery/charge_full 2>/dev/null");
+            AdbResult batteryCycleResult = await RunDeviceShellAsync(device,
+                "cat /sys/class/power_supply/battery/cycle_count 2>/dev/null");
+            AdbResult displaySizeResult = await RunDeviceShellAsync(device, "wm size");
+            AdbResult displayDensityResult = await RunDeviceShellAsync(device, "wm density");
+            AdbResult displayResult = await RunDeviceShellAsync(device, "dumpsys display");
+            AdbResult storageResult = await RunDeviceShellAsync(device, "df -k /data /sdcard");
+            AdbResult cameraResult = await RunDeviceShellAsync(device, "dumpsys media.camera");
+            AdbResult androidIdResult = await RunDeviceShellAsync(device, "settings get secure android_id");
+            AdbResult featuresResult = await RunDeviceShellAsync(device, "pm list features");
+            AdbResult kernelResult = await RunDeviceShellAsync(device, "uname -a");
+            AdbResult graphicsResult = await RunDeviceShellAsync(device, "dumpsys SurfaceFlinger");
+
+            Dictionary<string, string> properties = ParseAndroidProperties(OutputOf(propertiesResult));
+            string systemSerial = FirstNonEmpty(Property(properties, "ro.serialno"),
+                Property(properties, "ro.boot.serialno"));
+            DeviceInformationReport report = new DeviceInformationReport
+            {
+                DeviceName = FirstNonEmpty(Property(properties, "ro.product.marketname"),
+                    Property(properties, "ro.product.model"), device.DisplayName),
+                DeviceSerial = device.Serial,
+                GeneratedAt = DateTime.Now
+            };
+
+            AddDeviceInformationField(report, "裝置", "行銷名稱", Property(properties, "ro.product.marketname"), "getprop");
+            AddDeviceInformationField(report, "裝置", "製造商", Property(properties, "ro.product.manufacturer"), "getprop");
+            AddDeviceInformationField(report, "裝置", "品牌", Property(properties, "ro.product.brand"), "getprop");
+            AddDeviceInformationField(report, "裝置", "型號", FirstNonEmpty(Property(properties, "ro.product.model"), device.Model), "getprop / adb devices");
+            AddDeviceInformationField(report, "裝置", "產品代號", FirstNonEmpty(Property(properties, "ro.product.name"), device.Product), "getprop");
+            AddDeviceInformationField(report, "裝置", "裝置代號", Property(properties, "ro.product.device"), "getprop");
+            AddDeviceInformationField(report, "裝置", "主機板", FirstNonEmpty(Property(properties, "ro.product.board"), Property(properties, "ro.board.platform")), "getprop");
+            AddDeviceInformationField(report, "裝置", "硬體 SKU", FirstNonEmpty(Property(properties, "ro.boot.hardware.sku"), Property(properties, "ro.boot.product.hardware.sku")), "getprop");
+            AddDeviceInformationField(report, "裝置", "ADB 連線方式", device.ConnectionLabel, "adb devices");
+            AddDeviceInformationField(report, "識別", "ADB 序號", device.Serial, "adb devices");
+            AddDeviceInformationField(report, "識別", "系統序號", systemSerial, "getprop");
+            AddDeviceInformationField(report, "識別", "Android ID", FirstOutputLine(OutputOf(androidIdResult)), "settings secure");
+            AddDeviceInformationField(report, "識別", "IMEI / MEID", "一般 ADB 權限無法讀取", "Android 權限限制");
+
+            AddDeviceInformationField(report, "系統", "Android 版本", Property(properties, "ro.build.version.release"), "getprop");
+            AddDeviceInformationField(report, "系統", "API 等級", Property(properties, "ro.build.version.sdk"), "getprop");
+            AddDeviceInformationField(report, "系統", "安全性更新", Property(properties, "ro.build.version.security_patch"), "getprop");
+            AddDeviceInformationField(report, "系統", "Build ID", Property(properties, "ro.build.id"), "getprop");
+            AddDeviceInformationField(report, "系統", "版本號", FirstNonEmpty(Property(properties, "ro.build.display.id"), Property(properties, "ro.build.version.incremental")), "getprop");
+            AddDeviceInformationField(report, "系統", "Build 指紋", Property(properties, "ro.build.fingerprint"), "getprop");
+            AddDeviceInformationField(report, "系統", "Bootloader", Property(properties, "ro.bootloader"), "getprop");
+            AddDeviceInformationField(report, "系統", "Baseband", FirstNonEmpty(Property(properties, "gsm.version.baseband"), Property(properties, "ro.baseband")), "getprop");
+            AddDeviceInformationField(report, "系統", "Linux 核心", FirstOutputLine(OutputOf(kernelResult)), "uname -a");
+
+            AddCpuInformation(report, properties, OutputOf(cpuResult), OutputOf(cpuFrequencyResult));
+            AddMemoryInformation(report, OutputOf(memoryResult));
+            AddStorageInformation(report, OutputOf(storageResult));
+            AddBatteryInformation(report, OutputOf(batteryResult), OutputOf(batteryDesignResult),
+                OutputOf(batteryFullResult), OutputOf(batteryCycleResult));
+            AddDisplayInformation(report, OutputOf(displaySizeResult), OutputOf(displayDensityResult), OutputOf(displayResult));
+            AddGraphicsInformation(report, properties, OutputOf(graphicsResult));
+            AddCameraInformation(report, OutputOf(cameraResult));
+            AddFeatureInformation(report, OutputOf(featuresResult), properties);
+            return report;
+        }
+
+        private Task<AdbResult> RunDeviceShellAsync(DeviceInfo device, string command)
+        {
+            return RunAdbAsync("-s " + Quote(device.Serial) + " shell " + command);
+        }
+
+        private static string OutputOf(AdbResult result)
+        {
+            return result != null && result.Started ? (result.Output ?? "") : "";
+        }
+
+        private static Dictionary<string, string> ParseAndroidProperties(string output)
+        {
+            Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match match in Regex.Matches(output ?? "", @"(?m)^\[([^\]]+)\]: \[(.*)\]\s*$"))
+                values[match.Groups[1].Value.Trim()] = match.Groups[2].Value.Trim();
+            return values;
+        }
+
+        private static string Property(Dictionary<string, string> properties, string name)
+        {
+            string value;
+            return properties != null && properties.TryGetValue(name, out value) ? value : "";
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (string value in values)
+                if (!String.IsNullOrWhiteSpace(value) && value.Trim() != "unknown") return value.Trim();
+            return "";
+        }
+
+        private static void AddDeviceInformationField(DeviceInformationReport report, string category,
+            string name, string value, string source)
+        {
+            report.Fields.Add(new DeviceInformationField
+            {
+                Category = category,
+                Name = name,
+                Value = String.IsNullOrWhiteSpace(value) || value.Trim() == "null" ? "未回報" : value.Trim(),
+                Source = source
+            });
+        }
+
+        private static void AddCpuInformation(DeviceInformationReport report,
+            Dictionary<string, string> properties, string cpuInfo, string frequencyInfo)
+        {
+            string soc = FirstNonEmpty(Property(properties, "ro.soc.model"), Property(properties, "ro.board.platform"));
+            string socManufacturer = Property(properties, "ro.soc.manufacturer");
+            string hardware = FirstRegexGroup(cpuInfo, @"(?im)^Hardware\s*:\s*(.+)$");
+            string modelName = FirstNonEmpty(FirstRegexGroup(cpuInfo, @"(?im)^model name\s*:\s*(.+)$"),
+                hardware, FirstRegexGroup(cpuInfo, @"(?m)^Processor\s*:\s*(.+)$"));
+            int cores = Regex.Matches(cpuInfo ?? "", @"(?im)^processor\s*:").Count;
+            if (cores == 0)
+            {
+                int possible;
+                if (Int32.TryParse(Property(properties, "ro.vendor.soc.numcores"), out possible)) cores = possible;
+            }
+            List<long> frequencies = new List<long>();
+            foreach (Match match in Regex.Matches(frequencyInfo ?? "", @"(?m)^\s*(\d+)\s*$"))
+            {
+                long value;
+                if (Int64.TryParse(match.Groups[1].Value, out value)) frequencies.Add(value);
+            }
+            string maximumFrequency = frequencies.Count == 0 ? "" :
+                (frequencies.Max() / 1000000D).ToString("0.00", CultureInfo.InvariantCulture) + " GHz";
+            string features = FirstRegexGroup(cpuInfo, @"(?im)^Features\s*:\s*(.+)$");
+            string implementer = FirstRegexGroup(cpuInfo, @"(?im)^CPU implementer\s*:\s*(.+)$");
+            string part = FirstRegexGroup(cpuInfo, @"(?im)^CPU part\s*:\s*(.+)$");
+            if (features.Length > 260) features = features.Substring(0, 260) + "...";
+
+            AddDeviceInformationField(report, "處理器", "SoC 型號", soc, "getprop");
+            AddDeviceInformationField(report, "處理器", "SoC 製造商", socManufacturer, "getprop");
+            AddDeviceInformationField(report, "處理器", "CPU / 硬體名稱", modelName, "/proc/cpuinfo");
+            AddDeviceInformationField(report, "處理器", "核心數", cores > 0 ? cores.ToString() : "", "/proc/cpuinfo");
+            AddDeviceInformationField(report, "處理器", "最高回報時脈", maximumFrequency, "cpufreq sysfs");
+            AddDeviceInformationField(report, "處理器", "主要 ABI", Property(properties, "ro.product.cpu.abi"), "getprop");
+            AddDeviceInformationField(report, "處理器", "支援 ABI", Property(properties, "ro.product.cpu.abilist"), "getprop");
+            AddDeviceInformationField(report, "處理器", "CPU Implementer / Part",
+                FirstNonEmpty((implementer + (part.Length > 0 ? " / " + part : "")).Trim(' ', '/')), "/proc/cpuinfo");
+            AddDeviceInformationField(report, "處理器", "CPU 指令功能", features, "/proc/cpuinfo");
+        }
+
+        private static void AddMemoryInformation(DeviceInformationReport report, string memoryInfo)
+        {
+            long totalKb = ParseNamedKilobytes(memoryInfo, "MemTotal");
+            long availableKb = ParseNamedKilobytes(memoryInfo, "MemAvailable");
+            long swapKb = ParseNamedKilobytes(memoryInfo, "SwapTotal");
+            AddDeviceInformationField(report, "記憶體", "系統可見總記憶體",
+                totalKb > 0 ? FormatBytes(totalKb * 1024L) : "", "/proc/meminfo");
+            AddDeviceInformationField(report, "記憶體", "目前可用記憶體",
+                availableKb > 0 ? FormatBytes(availableKb * 1024L) : "", "/proc/meminfo");
+            AddDeviceInformationField(report, "記憶體", "Swap / ZRAM 總量",
+                swapKb > 0 ? FormatBytes(swapKb * 1024L) : "", "/proc/meminfo");
+            AddDeviceInformationField(report, "記憶體", "備註",
+                "系統可見容量通常低於商品標示容量，部分空間由硬體與核心保留。", "Android / Linux");
+        }
+
+        private static void AddStorageInformation(DeviceInformationReport report, string storageInfo)
+        {
+            HashSet<string> mounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string rawLine in (storageInfo ?? "").Replace("\r", "").Split('\n'))
+            {
+                string line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith("Filesystem", StringComparison.OrdinalIgnoreCase)) continue;
+                string[] parts = Regex.Split(line, @"\s+");
+                if (parts.Length < 6) continue;
+                long totalKb, usedKb, availableKb;
+                if (!Int64.TryParse(parts[1], out totalKb) || !Int64.TryParse(parts[2], out usedKb) ||
+                    !Int64.TryParse(parts[3], out availableKb)) continue;
+                string mount = parts[parts.Length - 1];
+                if (!mounts.Add(mount)) continue;
+                string value = "總計 " + FormatBytes(totalKb * 1024L) + "；已用 " +
+                    FormatBytes(usedKb * 1024L) + "；可用 " + FormatBytes(availableKb * 1024L);
+                AddDeviceInformationField(report, "儲存空間", mount, value, "df");
+            }
+            if (mounts.Count == 0)
+                AddDeviceInformationField(report, "儲存空間", "內部儲存空間", "", "df");
+        }
+
+        private static void AddBatteryInformation(DeviceInformationReport report, string batteryInfo,
+            string designCapacity, string fullCapacity, string cycleCount)
+        {
+            Dictionary<string, string> values = ParseColonValues(batteryInfo);
+            int status = ParseIntValue(Value(values, "status"));
+            int health = ParseIntValue(Value(values, "health"));
+            int temperature = ParseIntValue(Value(values, "temperature"));
+            int voltage = ParseIntValue(Value(values, "voltage"));
+            string statusText = status == 2 ? "充電中" : status == 3 ? "放電中" : status == 4 ? "未充電" : status == 5 ? "已充滿" : Value(values, "status");
+            string healthText = health == 2 ? "良好" : health == 3 ? "過熱" : health == 4 ? "損壞" : health == 5 ? "過電壓" : health == 7 ? "過冷" : Value(values, "health");
+            string level = Value(values, "level");
+            AddDeviceInformationField(report, "電池", "目前電量", level.Length > 0 ? level + "%" : "", "dumpsys battery");
+            AddDeviceInformationField(report, "電池", "狀態", statusText, "dumpsys battery");
+            AddDeviceInformationField(report, "電池", "健康狀態", healthText, "dumpsys battery");
+            AddDeviceInformationField(report, "電池", "技術", Value(values, "technology"), "dumpsys battery");
+            AddDeviceInformationField(report, "電池", "溫度", temperature != 0 ? (temperature / 10D).ToString("0.0") + " °C" : "", "dumpsys battery");
+            AddDeviceInformationField(report, "電池", "電壓", voltage > 0 ? voltage + " mV" : "", "dumpsys battery");
+            AddDeviceInformationField(report, "電池", "設計容量", FormatBatteryCapacity(designCapacity), "battery sysfs");
+            AddDeviceInformationField(report, "電池", "目前完整容量", FormatBatteryCapacity(fullCapacity), "battery sysfs");
+            AddDeviceInformationField(report, "電池", "循環次數", FirstOutputLine(cycleCount), "battery sysfs");
+            List<string> powerSources = new List<string>();
+            if (String.Equals(Value(values, "AC powered"), "true", StringComparison.OrdinalIgnoreCase)) powerSources.Add("AC");
+            if (String.Equals(Value(values, "USB powered"), "true", StringComparison.OrdinalIgnoreCase)) powerSources.Add("USB");
+            if (String.Equals(Value(values, "Wireless powered"), "true", StringComparison.OrdinalIgnoreCase)) powerSources.Add("無線充電");
+            AddDeviceInformationField(report, "電池", "目前供電來源", powerSources.Count > 0 ? String.Join("、", powerSources.ToArray()) : "未接電源", "dumpsys battery");
+        }
+
+        private static void AddDisplayInformation(DeviceInformationReport report, string sizeInfo,
+            string densityInfo, string displayInfo)
+        {
+            string physicalSize = FirstRegexGroup(sizeInfo, @"(?im)^Physical size:\s*(.+)$");
+            string overrideSize = FirstRegexGroup(sizeInfo, @"(?im)^Override size:\s*(.+)$");
+            string physicalDensity = FirstRegexGroup(densityInfo, @"(?im)^Physical density:\s*(.+)$");
+            string overrideDensity = FirstRegexGroup(densityInfo, @"(?im)^Override density:\s*(.+)$");
+            string refresh = FirstRegexGroup(displayInfo, @"(?i)(?:refreshRate|mRefreshRate)\s*[=:]\s*([0-9.]+)");
+            AddDeviceInformationField(report, "螢幕", "原生解析度", physicalSize, "wm size");
+            AddDeviceInformationField(report, "螢幕", "目前解析度", FirstNonEmpty(overrideSize, physicalSize), "wm size");
+            AddDeviceInformationField(report, "螢幕", "原生像素密度", physicalDensity.Length > 0 ? physicalDensity + " dpi" : "", "wm density");
+            AddDeviceInformationField(report, "螢幕", "目前像素密度", FirstNonEmpty(overrideDensity, physicalDensity) +
+                (FirstNonEmpty(overrideDensity, physicalDensity).Length > 0 ? " dpi" : ""), "wm density");
+            AddDeviceInformationField(report, "螢幕", "目前更新率", refresh.Length > 0 ? refresh + " Hz" : "", "dumpsys display");
+            AddDeviceInformationField(report, "螢幕", "面板尺寸 / 材質", "Android 公開 ADB 資訊通常不提供", "系統限制");
+        }
+
+        private static void AddGraphicsInformation(DeviceInformationReport report,
+            Dictionary<string, string> properties, string surfaceFlingerInfo)
+        {
+            string gles = FirstRegexGroup(surfaceFlingerInfo, @"(?im)^GLES:\s*(.+)$");
+            AddDeviceInformationField(report, "圖形", "GPU / OpenGL ES", gles, "dumpsys SurfaceFlinger");
+            AddDeviceInformationField(report, "圖形", "EGL 硬體", Property(properties, "ro.hardware.egl"), "getprop");
+            AddDeviceInformationField(report, "圖形", "HDR 顯示旗標", Property(properties, "ro.surface_flinger.has_HDR_display"), "getprop");
+            AddDeviceInformationField(report, "圖形", "廣色域顯示旗標", Property(properties, "ro.surface_flinger.has_wide_color_display"), "getprop");
+        }
+
+        private static void AddCameraInformation(DeviceInformationReport report, string cameraInfo)
+        {
+            string count = FirstRegexGroup(cameraInfo, @"(?im)Number of camera devices:\s*(\d+)");
+            HashSet<string> ids = new HashSet<string>();
+            foreach (Match match in Regex.Matches(cameraInfo ?? "", @"(?im)(?:Camera ID|Device)\s*[: ]\s*([A-Za-z0-9._-]+)"))
+                ids.Add(match.Groups[1].Value);
+            HashSet<string> sensorSizes = new HashSet<string>();
+            foreach (Match match in Regex.Matches(cameraInfo ?? "", @"(?i)pixelArraySize[^\r\n]*?\[\s*(\d+)\s+(\d+)\s*\]"))
+            {
+                long width, height;
+                if (!Int64.TryParse(match.Groups[1].Value, out width) || !Int64.TryParse(match.Groups[2].Value, out height)) continue;
+                double megapixels = width * height / 1000000D;
+                sensorSizes.Add(width + " × " + height + "（約 " + megapixels.ToString("0.0") + " MP）");
+            }
+            if (String.IsNullOrWhiteSpace(count) && ids.Count > 0) count = ids.Count.ToString();
+            AddDeviceInformationField(report, "相機", "系統相機數量", count, "dumpsys media.camera");
+            AddDeviceInformationField(report, "相機", "相機 ID", ids.Count > 0 ? String.Join("、", ids.Take(12).ToArray()) : "", "dumpsys media.camera");
+            AddDeviceInformationField(report, "相機", "感光像素陣列", sensorSizes.Count > 0 ? String.Join("；", sensorSizes.Take(12).ToArray()) : "", "Camera2 metadata");
+            AddDeviceInformationField(report, "相機", "可用光圈", CameraMetadataValue(cameraInfo, "android.lens.info.availableApertures"), "Camera2 metadata");
+            AddDeviceInformationField(report, "相機", "可用焦距", CameraMetadataValue(cameraInfo, "android.lens.info.availableFocalLengths"), "Camera2 metadata");
+            AddDeviceInformationField(report, "相機", "感光元件實體尺寸", CameraMetadataValue(cameraInfo, "android.sensor.info.physicalSize"), "Camera2 metadata");
+            AddDeviceInformationField(report, "相機", "鏡頭 / 感光元件型號", "多數廠牌不透過 Android 公開介面提供", "系統限制");
+        }
+
+        private static string CameraMetadataValue(string cameraInfo, string key)
+        {
+            Match match = Regex.Match(cameraInfo ?? "", Regex.Escape(key) + @"[^\r\n]*(?:\r?\n)\s*\[([^\]]+)\]",
+                RegexOptions.IgnoreCase);
+            if (!match.Success) return "";
+            return Regex.Replace(match.Groups[1].Value.Trim(), @"\s+", " ");
+        }
+
+        private static void AddFeatureInformation(DeviceInformationReport report, string featureInfo,
+            Dictionary<string, string> properties)
+        {
+            List<string> features = (featureInfo ?? "").Replace("\r", "").Split('\n')
+                .Select(delegate(string line) { return line.Trim(); })
+                .Where(delegate(string line) { return line.StartsWith("feature:", StringComparison.OrdinalIgnoreCase); })
+                .Select(delegate(string line) { return line.Substring(8); }).ToList();
+            string[] notableNames = {
+                "android.hardware.wifi", "android.hardware.bluetooth", "android.hardware.nfc",
+                "android.hardware.telephony", "android.hardware.fingerprint", "android.hardware.sensor.gyroscope",
+                "android.hardware.sensor.accelerometer", "android.hardware.location.gps", "android.hardware.usb.host"
+            };
+            List<string> notable = notableNames.Where(delegate(string name) { return features.Contains(name); }).ToList();
+            AddDeviceInformationField(report, "功能", "公開硬體功能數", features.Count > 0 ? features.Count.ToString() : "", "pm list features");
+            AddDeviceInformationField(report, "功能", "主要硬體功能", notable.Count > 0 ? String.Join("、", notable.ToArray()) : "", "pm list features");
+            AddDeviceInformationField(report, "網路", "Wi-Fi 介面", FirstNonEmpty(Property(properties, "wifi.interface"), "wlan0"), "getprop");
+            AddDeviceInformationField(report, "網路", "藍牙名稱", Property(properties, "bluetooth.device.default_name"), "getprop");
+        }
+
+        private void PopulateDeviceInformationList(DeviceInformationReport report)
+        {
+            deviceInformationList.BeginUpdate();
+            try
+            {
+                deviceInformationList.Items.Clear();
+                deviceInformationList.Groups.Clear();
+                Dictionary<string, ListViewGroup> groups = new Dictionary<string, ListViewGroup>();
+                foreach (DeviceInformationField field in report.Fields)
+                {
+                    ListViewGroup group;
+                    if (!groups.TryGetValue(field.Category, out group))
+                    {
+                        group = new ListViewGroup(field.Category, HorizontalAlignment.Left);
+                        groups[field.Category] = group;
+                        deviceInformationList.Groups.Add(group);
+                    }
+                    ListViewItem item = new ListViewItem(field.Category, group);
+                    item.SubItems.Add(field.Name);
+                    item.SubItems.Add(field.Value);
+                    item.SubItems.Add(field.Source);
+                    item.Tag = field;
+                    deviceInformationList.Items.Add(item);
+                }
+                ResizeDeviceInformationColumns();
+            }
+            finally
+            {
+                deviceInformationList.EndUpdate();
+            }
+        }
+
+        private void CopyCompleteDeviceInformation()
+        {
+            if (currentDeviceInformationReport == null) return;
+            try
+            {
+                Clipboard.SetText(FormatDeviceInformationText(currentDeviceInformationReport));
+                deviceInformationStatusLabel.Text = "已將完整手機資訊複製到 Windows 剪貼簿。";
+                deviceInformationStatusLabel.ForeColor = Green;
+            }
+            catch (ExternalException)
+            {
+                MessageBox.Show(this, "Windows 剪貼簿目前忙碌，請稍後再試。", "複製失敗",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void CopySelectedDeviceInformationValue()
+        {
+            if (deviceInformationList == null || deviceInformationList.SelectedItems.Count == 0) return;
+            DeviceInformationField field = deviceInformationList.SelectedItems[0].Tag as DeviceInformationField;
+            if (field == null) return;
+            try
+            {
+                Clipboard.SetText(field.Value);
+                deviceInformationStatusLabel.Text = "已複製「" + field.Name + "」：" + field.Value;
+                deviceInformationStatusLabel.ForeColor = Green;
+            }
+            catch (ExternalException) { }
+        }
+
+        private void ExportDeviceInformation()
+        {
+            if (currentDeviceInformationReport == null) return;
+            string safeName = Regex.Replace(currentDeviceInformationReport.DeviceName ?? "Android", @"[\\/:*?\""<>|]", "_");
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Title = "匯出手機資訊";
+                dialog.Filter = "文字檔 (*.txt)|*.txt|Excel 活頁簿 (*.xlsx)|*.xlsx|JSON 檔 (*.json)|*.json";
+                dialog.FilterIndex = 1;
+                dialog.AddExtension = true;
+                dialog.DefaultExt = "txt";
+                dialog.FileName = safeName + "_手機資訊_" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".txt";
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    bool excel = dialog.FilterIndex == 2 || String.Equals(Path.GetExtension(dialog.FileName), ".xlsx", StringComparison.OrdinalIgnoreCase);
+                    bool json = dialog.FilterIndex == 3 || String.Equals(Path.GetExtension(dialog.FileName), ".json", StringComparison.OrdinalIgnoreCase);
+                    string outputPath = dialog.FileName;
+                    if (excel && !String.Equals(Path.GetExtension(outputPath), ".xlsx", StringComparison.OrdinalIgnoreCase))
+                        outputPath = Path.ChangeExtension(outputPath, ".xlsx");
+                    else if (json && !String.Equals(Path.GetExtension(outputPath), ".json", StringComparison.OrdinalIgnoreCase))
+                        outputPath = Path.ChangeExtension(outputPath, ".json");
+                    if (excel)
+                    {
+                        WriteDeviceInformationXlsx(outputPath, currentDeviceInformationReport);
+                    }
+                    else
+                    {
+                        string content = json
+                            ? new JavaScriptSerializer().Serialize(currentDeviceInformationReport)
+                            : FormatDeviceInformationText(currentDeviceInformationReport);
+                        File.WriteAllText(outputPath, content, new UTF8Encoding(true));
+                    }
+                    deviceInformationStatusLabel.Text = "已匯出手機資訊：" + outputPath;
+                    deviceInformationStatusLabel.ForeColor = Green;
+                    Log("已匯出手機資訊：" + outputPath);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "無法匯出手機資訊。\n\n" + ex.Message, "匯出失敗",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+
+        private static void WriteDeviceInformationXlsx(string path, DeviceInformationReport report)
+        {
+            using (FileStream file = new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+            using (ZipArchive archive = new ZipArchive(file, ZipArchiveMode.Create, false, Encoding.UTF8))
+            {
+                WriteXlsxEntry(archive, "[Content_Types].xml",
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
+                    "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>" +
+                    "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
+                    "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>" +
+                    "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>" +
+                    "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>" +
+                    "<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>" +
+                    "<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>" +
+                    "</Types>");
+                WriteXlsxEntry(archive, "_rels/.rels",
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
+                    "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>" +
+                    "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/>" +
+                    "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" Target=\"docProps/app.xml\"/>" +
+                    "</Relationships>");
+                WriteXlsxEntry(archive, "docProps/app.xml",
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\" xmlns:vt=\"http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes\">" +
+                    "<Application>Android ADB 快速工具</Application>" +
+                    "</Properties>");
+                string created = report.GeneratedAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+                WriteXlsxEntry(archive, "docProps/core.xml",
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\" " +
+                    "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">" +
+                    "<dc:title>Android 手機詳細資訊</dc:title><dc:creator>Android ADB 快速工具</dc:creator>" +
+                    "<dcterms:created xsi:type=\"dcterms:W3CDTF\">" + created + "</dcterms:created></cp:coreProperties>");
+                WriteXlsxEntry(archive, "xl/workbook.xml",
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">" +
+                    "<sheets><sheet name=\"手機資訊\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                WriteXlsxEntry(archive, "xl/_rels/workbook.xml.rels",
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
+                    "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>" +
+                    "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>" +
+                    "</Relationships>");
+                WriteXlsxEntry(archive, "xl/styles.xml", DeviceInformationXlsxStyles());
+                WriteXlsxEntry(archive, "xl/worksheets/sheet1.xml", DeviceInformationWorksheetXml(report));
+            }
+        }
+
+        private static string DeviceInformationXlsxStyles()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">" +
+                "<fonts count=\"4\">" +
+                "<font><sz val=\"11\"/><name val=\"Microsoft JhengHei UI\"/><family val=\"2\"/></font>" +
+                "<font><b/><color rgb=\"FFFFFFFF\"/><sz val=\"16\"/><name val=\"Microsoft JhengHei UI\"/></font>" +
+                "<font><b/><color rgb=\"FF27323B\"/><sz val=\"11\"/><name val=\"Microsoft JhengHei UI\"/></font>" +
+                "<font><b/><color rgb=\"FFFFFFFF\"/><sz val=\"11\"/><name val=\"Microsoft JhengHei UI\"/></font>" +
+                "</fonts>" +
+                "<fills count=\"5\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill>" +
+                "<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF269E8E\"/><bgColor indexed=\"64\"/></patternFill></fill>" +
+                "<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFF1F4F6\"/><bgColor indexed=\"64\"/></patternFill></fill>" +
+                "<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFDDF1ED\"/><bgColor indexed=\"64\"/></patternFill></fill></fills>" +
+                "<borders count=\"2\"><border><left/><right/><top/><bottom/><diagonal/></border>" +
+                "<border><left/><right/><top/><bottom style=\"thin\"><color rgb=\"FFD9E0E5\"/></bottom><diagonal/></border></borders>" +
+                "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>" +
+                "<cellXfs count=\"7\">" +
+                "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>" +
+                "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"2\" borderId=\"0\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\"><alignment vertical=\"center\"/></xf>" +
+                "<xf numFmtId=\"0\" fontId=\"2\" fillId=\"3\" borderId=\"0\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\"><alignment vertical=\"center\"/></xf>" +
+                "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"><alignment vertical=\"center\" wrapText=\"1\"/></xf>" +
+                "<xf numFmtId=\"0\" fontId=\"3\" fillId=\"2\" borderId=\"0\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\"><alignment vertical=\"center\"/></xf>" +
+                "<xf numFmtId=\"0\" fontId=\"2\" fillId=\"4\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\"><alignment vertical=\"top\"/></xf>" +
+                "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\"><alignment vertical=\"top\" wrapText=\"1\"/></xf>" +
+                "</cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>";
+        }
+
+        private static string DeviceInformationWorksheetXml(DeviceInformationReport report)
+        {
+            StringBuilder xml = new StringBuilder();
+            xml.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            xml.Append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
+            xml.Append("<sheetViews><sheetView workbookViewId=\"0\" showGridLines=\"0\"><pane ySplit=\"8\" topLeftCell=\"A9\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>");
+            xml.Append("<cols><col min=\"1\" max=\"1\" width=\"16\" customWidth=\"1\"/><col min=\"2\" max=\"2\" width=\"28\" customWidth=\"1\"/>");
+            xml.Append("<col min=\"3\" max=\"3\" width=\"70\" customWidth=\"1\"/><col min=\"4\" max=\"4\" width=\"22\" customWidth=\"1\"/></cols><sheetData>");
+            AppendXlsxRow(xml, 1, 28, new[] { XlsxCell("A1", "Android 手機詳細資訊", 1) });
+            AppendXlsxRow(xml, 2, 22, new[] { XlsxCell("A2", "裝置", 2), XlsxCell("B2", report.DeviceName, 3) });
+            AppendXlsxRow(xml, 3, 22, new[] { XlsxCell("A3", "ADB 序號", 2), XlsxCell("B3", report.DeviceSerial, 3) });
+            AppendXlsxRow(xml, 4, 22, new[] { XlsxCell("A4", "讀取時間", 2), XlsxCell("B4", report.GeneratedAt.ToString("yyyy/MM/dd HH:mm:ss"), 3) });
+            AppendXlsxRow(xml, 6, 30, new[] { XlsxCell("A6", "隱私提醒：本檔案包含裝置序號與 Android ID；分享前請確認接收對象。", 2) });
+            AppendXlsxRow(xml, 8, 24, new[] { XlsxCell("A8", "分類", 4), XlsxCell("B8", "資訊項目", 4), XlsxCell("C8", "內容", 4), XlsxCell("D8", "資料來源", 4) });
+            int row = 9;
+            string lastCategory = "";
+            foreach (DeviceInformationField field in report.Fields)
+            {
+                bool newCategory = !String.Equals(lastCategory, field.Category, StringComparison.Ordinal);
+                int categoryStyle = newCategory ? 5 : 6;
+                AppendXlsxRow(xml, row, 22, new[] {
+                    XlsxCell("A" + row, field.Category, categoryStyle),
+                    XlsxCell("B" + row, field.Name, 6),
+                    XlsxCell("C" + row, field.Value, 6),
+                    XlsxCell("D" + row, field.Source, 6)
+                });
+                lastCategory = field.Category;
+                row++;
+            }
+            // Excel validates worksheet child elements in the exact ECMA-376 sequence:
+            // autoFilter must appear before mergeCells. Tolerant readers accepted the former
+            // order, but desktop Excel reported that the workbook needed repair.
+            xml.Append("</sheetData><autoFilter ref=\"A8:D" + Math.Max(8, row - 1) + "\"/>");
+            xml.Append("<mergeCells count=\"5\"><mergeCell ref=\"A1:D1\"/><mergeCell ref=\"B2:D2\"/><mergeCell ref=\"B3:D3\"/><mergeCell ref=\"B4:D4\"/><mergeCell ref=\"A6:D6\"/></mergeCells>");
+            xml.Append("<pageMargins left=\"0.4\" right=\"0.4\" top=\"0.6\" bottom=\"0.6\" header=\"0.2\" footer=\"0.2\"/>");
+            xml.Append("<pageSetup orientation=\"landscape\" fitToWidth=\"1\" fitToHeight=\"0\"/></worksheet>");
+            return xml.ToString();
+        }
+
+        private static void AppendXlsxRow(StringBuilder xml, int rowNumber, int height, IEnumerable<string> cells)
+        {
+            xml.Append("<row r=\"").Append(rowNumber).Append("\" ht=\"").Append(height).Append("\" customHeight=\"1\">");
+            foreach (string cell in cells) xml.Append(cell);
+            xml.Append("</row>");
+        }
+
+        private static string XlsxCell(string reference, string value, int style)
+        {
+            return "<c r=\"" + reference + "\" s=\"" + style + "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" +
+                EscapeXml(value) + "</t></is></c>";
+        }
+
+        private static string EscapeXml(string value)
+        {
+            if (String.IsNullOrEmpty(value)) return "";
+            return value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
+                .Replace("\"", "&quot;").Replace("'", "&apos;");
+        }
+
+        private static void WriteXlsxEntry(ZipArchive archive, string name, string content)
+        {
+            ZipArchiveEntry entry = archive.CreateEntry(name, CompressionLevel.Optimal);
+            using (Stream stream = entry.Open())
+            using (StreamWriter writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                writer.Write(content);
+        }
+
+        private static string FormatDeviceInformationText(DeviceInformationReport report)
+        {
+            StringBuilder text = new StringBuilder();
+            text.AppendLine("Android 手機詳細資訊");
+            text.AppendLine("裝置：" + report.DeviceName);
+            text.AppendLine("ADB 序號：" + report.DeviceSerial);
+            text.AppendLine("讀取時間：" + report.GeneratedAt.ToString("yyyy/MM/dd HH:mm:ss"));
+            text.AppendLine(new string('=', 60));
+            string category = null;
+            foreach (DeviceInformationField field in report.Fields)
+            {
+                if (!String.Equals(category, field.Category, StringComparison.Ordinal))
+                {
+                    category = field.Category;
+                    text.AppendLine();
+                    text.AppendLine("[" + category + "]");
+                }
+                text.AppendLine(field.Name + "：" + field.Value + "　（來源：" + field.Source + "）");
+            }
+            return text.ToString();
+        }
+
+        private static string FirstRegexGroup(string text, string pattern)
+        {
+            Match match = Regex.Match(text ?? "", pattern);
+            return match.Success ? match.Groups[1].Value.Trim() : "";
+        }
+
+        private static long ParseNamedKilobytes(string text, string name)
+        {
+            Match match = Regex.Match(text ?? "", "(?im)^" + Regex.Escape(name) + @"\s*:\s*(\d+)\s*kB");
+            long value;
+            return match.Success && Int64.TryParse(match.Groups[1].Value, out value) ? value : 0L;
+        }
+
+        private static Dictionary<string, string> ParseColonValues(string text)
+        {
+            Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string line in (text ?? "").Replace("\r", "").Split('\n'))
+            {
+                int separator = line.IndexOf(':');
+                if (separator <= 0) continue;
+                values[line.Substring(0, separator).Trim()] = line.Substring(separator + 1).Trim();
+            }
+            return values;
+        }
+
+        private static string Value(Dictionary<string, string> values, string name)
+        {
+            string value;
+            return values.TryGetValue(name, out value) ? value : "";
+        }
+
+        private static int ParseIntValue(string value)
+        {
+            int parsed;
+            return Int32.TryParse(value, out parsed) ? parsed : 0;
+        }
+
+        private static string FormatBatteryCapacity(string output)
+        {
+            long value;
+            if (!Int64.TryParse(FirstOutputLine(output), out value) || value <= 0) return "";
+            double milliampHours = value > 100000 ? value / 1000D : value;
+            return milliampHours.ToString("0", CultureInfo.InvariantCulture) + " mAh";
         }
 
         private List<DeviceInfo> SelectedInstallDevices()
@@ -6418,6 +7613,11 @@ namespace AndroidADBTools
             if (openUrlButton != null) openUrlButton.Enabled = enabled;
             if (screenshotButton != null) screenshotButton.Enabled = enabled;
             if (screenshotClipboardButton != null) screenshotClipboardButton.Enabled = enabled;
+            if (readDeviceInformationButton != null) readDeviceInformationButton.Enabled = enabled;
+            if (clearDeviceInformationCacheButton != null)
+                clearDeviceInformationCacheButton.Enabled = enabled &&
+                    !String.IsNullOrWhiteSpace(currentDeviceInformationCachePath) &&
+                    File.Exists(currentDeviceInformationCachePath);
             if (startDownloadButton != null) startDownloadButton.Enabled = enabled;
             if (browseDownloadFolderButton != null) browseDownloadFolderButton.Enabled = enabled;
             if (downloadModeComboBox != null) downloadModeComboBox.Enabled = enabled;

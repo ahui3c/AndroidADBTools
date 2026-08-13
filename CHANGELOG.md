@@ -4,6 +4,19 @@
 
 ## [尚未發行]
 
+## [2.0.5] - 2026-08-14
+
+### 手機資訊
+
+- 新增獨立「手機資訊」模組，可透過 ADB 讀取裝置型號、製造商、產品代號、Android 版本、Build、安全性更新與序號等系統資料。
+- 整合處理器／SoC、核心數、最高回報時脈、ABI、記憶體、儲存空間、電池、螢幕、相機與主要硬體功能資訊。
+- 每項資訊皆標示 ADB 資料來源；Android 或廠牌未公開的 IMEI、相機模組及電池規格會明確標示限制，不以推測值代替。
+- 支援一鍵複製完整手機資訊、雙擊複製單項內容，以及匯出 UTF-8 文字檔、Excel `.xlsx` 活頁簿或 JSON 檔。
+- Excel 匯出包含裝置摘要、隱私提醒、凍結表頭、欄位篩選、適當欄寬與分類樣式，且不需要安裝 Microsoft Excel。
+- 修正 Excel 匯出的工作表 XML 節點順序，避免 Microsoft Excel 顯示「部分內容有問題」並要求修復活頁簿。
+- 讀取完成後會將手機資訊保存為本機快取；同一台手機再次連接或在多台手機間切換時，會自動帶入各自的資料，不必重新執行完整讀取。
+- 快取會以 ADB 序號、Android ID 與已知 USB／Wi-Fi 序號別名辨識裝置，並提供「讀取／強制更新」及只清除目前手機快取的功能。
+
 ## [2.0.4] - 2026-08-13
 
 ### 介面設計
@@ -88,7 +101,8 @@
 - 提供亮度、快速設定、截圖與 DCIM／Pictures 資料下載。
 - 支援 Per-Monitor V2 高 DPI 與視窗大小記憶。
 
-[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.4...HEAD
+[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.5...HEAD
+[2.0.5]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.1...v2.0.2
