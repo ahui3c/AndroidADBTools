@@ -4,6 +4,14 @@
 
 ## [尚未發行]
 
+## [2.0.7] - 2026-08-14
+
+### APK／XAPK 安裝
+
+- 常用安裝組合、`APKs` 資料夾同步及快速拖放安裝新增 `.xapk` 支援。
+- XAPK 會在安全檢查後解壓，透過 ADB `install-multiple` 一次安裝 base APK 與 split APK。
+- 若 XAPK 包含 `Android/obb` 遊戲資料，安裝後會自動建立手機端資料夾並傳輸到對應位置；完成後清除電腦暫存檔。
+
 ### 文件
 
 - 更新 GitHub 首頁的版本摘要、下載形式、功能說明與狀態徽章。
@@ -121,7 +129,8 @@
 - 提供亮度、快速設定、截圖與 DCIM／Pictures 資料下載。
 - 支援 Per-Monitor V2 高 DPI 與視窗大小記憶。
 
-[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.6...HEAD
+[尚未發行]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.7...HEAD
+[2.0.7]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/ahui3c/AndroidADBTools/compare/v2.0.3...v2.0.4

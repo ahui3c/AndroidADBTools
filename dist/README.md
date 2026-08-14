@@ -14,11 +14,11 @@
 
 一套可使用免安裝可攜式版本或完整安裝版的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.6**
+目前版本：**v2.0.7**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
-> v2.0.6 同時提供標準可攜式版、內含 ADB 與 ArgyllCMS `spotread` 的 Complete 可攜式版，以及支援 UAC、捷徑與解除安裝的 Complete 完整安裝版。程式也能從「關於」頁面一鍵更新到最新公開版本。
+> v2.0.7 新增 APK／XAPK 安裝支援，並同時提供標準可攜式版、內含 ADB 與 ArgyllCMS `spotread` 的 Complete 可攜式版，以及支援 UAC、捷徑與解除安裝的 Complete 完整安裝版。程式也能從「關於」頁面一鍵更新到最新公開版本。
 
 ## 主要功能
 
@@ -31,11 +31,12 @@
 - 手機資訊讀取後會依裝置識別保存本機快取；同一台手機再次連接或在多台手機之間切換時會自動帶入，並可強制更新或只清除目前手機的快取。
 - 「關於」頁面提供一鍵線上更新：自動下載並驗證 GitHub 最新公開版本、替換目前程式後重新啟動；安裝位置需要系統管理員權限時會顯示 Windows UAC 授權畫面。
 - 可選擇免安裝可攜式版本，或使用內含 ADB、`spotread.exe`、開始功能表捷徑與解除安裝功能的 Complete 安裝版。
-- 建立多組「常用 APK 安裝」清單，一鍵依序安裝並顯示每個 APK 的結果。
-- APK 清單欄位過長時，可將滑鼠移到項目上查看完整檔名與完整位置。
+- 建立多組「常用 APK／XAPK 安裝」清單，一鍵依序安裝並顯示每個套件的結果。
+- 支援標準 APK 與 XAPK；XAPK 會自動安裝 base／split APK，並將封包內的 `Android/obb` 資料傳輸到正確位置。
+- 安裝清單欄位過長時，可將滑鼠移到項目上查看完整檔名與完整位置。
 - 「我的組合」支援拖曳排序；自訂組合可雙擊直接編輯名稱，排序會自動保存。
 - 自動掃描程式旁 `APKs` 目錄中的子資料夾，建立不可誤刪的同步安裝組合。
-- 「快速安裝 / 傳輸」提供左右雙拖曳區：左側拖入 APK 立即安裝；右側可選 `Download`、`DCIM`、`Pictures` 或內部儲存根目錄，再拖入檔案或資料夾並保留完整結構。
+- 「快速安裝 / 傳輸」提供左右雙拖曳區：左側拖入 APK 或 XAPK 立即安裝；右側可選 `Download`、`DCIM`、`Pictures` 或內部儲存根目錄，再拖入檔案或資料夾並保留完整結構。
 - 讀取與即時調整手機亮度，支援滑桿、數值及 `+`／`-` 鍵。
 - 新增實測自動調整亮度功能：搭配 ArgyllCMS `spotread` 與外接色度計，以閉迴路反覆量測並調整 Android 亮度至目標值；原有手動模式完整保留。
 - 快速設定自動亮度、10 分鐘關屏、最長關屏時間及充電時保持螢幕開啟。
@@ -102,9 +103,9 @@
 
 GitHub Release 同時提供可攜式版本與完整安裝版：
 
-- `AndroidADBTools-v2.0.6.zip`：標準可攜式版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
-- `AndroidADBTools-v2.0.6-complete.zip`：Complete 可攜式版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
-- `AndroidADBTools-v2.0.6-complete-setup.exe`：完整安裝版，包含與 Complete 可攜式版相同的工具，會安裝到 Program Files，提供開始功能表、選配桌面捷徑與解除安裝功能。
+- `AndroidADBTools-v2.0.7.zip`：標準可攜式版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.7-complete.zip`：Complete 可攜式版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.7-complete-setup.exe`：完整安裝版，包含與 Complete 可攜式版相同的工具，會安裝到 Program Files，提供開始功能表、選配桌面捷徑與解除安裝功能。
 
 1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的版本。可攜式版請完整解壓縮；安裝版直接執行 Setup 並接受 Windows UAC 授權。
 2. 可攜式版執行 `AndroidADBTools.exe`；安裝版可從開始功能表啟動。
@@ -113,7 +114,7 @@ GitHub Release 同時提供可攜式版本與完整安裝版：
 
 程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`ADBtools\adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。尚未指定 `spotread.exe` 時，也會自動搜尋 Complete 版內附的 `Argyll\bin\spotread.exe` 並填入設定。
 
-## APK 資料夾同步
+## APK／XAPK 安裝與資料夾同步
 
 可在程式旁建立以下結構：
 
@@ -121,12 +122,14 @@ GitHub Release 同時提供可攜式版本與完整安裝版：
 APKs/
 ├─ 常用工具/
 │  ├─ app1.apk
-│  └─ app2.apk
+│  └─ game.xapk
 └─ 測試程式/
    └─ test.apk
 ```
 
-程式啟動時會將每個子資料夾建立為一個安裝組合；點選時會重新掃描 APK 內容。資料夾同步組合會以資料夾圖示標示，名稱與內容直接由檔案系統管理。
+程式啟動時會將每個子資料夾建立為一個安裝組合；點選時會重新掃描 APK 與 XAPK 內容。資料夾同步組合會以資料夾圖示標示，名稱與內容直接由檔案系統管理。
+
+XAPK 是包含一個或多個 APK 的壓縮封包。程式會先檢查封包路徑與解壓大小，單一 APK 使用 ADB `install`，多個 base／split APK 使用 `install-multiple` 一次安裝。封包若包含 `Android/obb/<套件名稱>/`，安裝成功後會自動傳輸到手機的 `/sdcard/Android/obb/`；若手機系統或廠牌限制該位置的寫入，會將其列為安裝失敗並在「執行紀錄」顯示原因。
 
 ## 手機資料下載
 

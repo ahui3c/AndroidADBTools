@@ -14,11 +14,11 @@
 
 A Windows GUI for ADB, available as portable packages or a complete installer, that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.6**
+Current version: **v2.0.7**
 
 [View the complete changelog](CHANGELOG.md)
 
-> v2.0.6 is available as a standard portable package, a Complete portable package with ADB and ArgyllCMS `spotread`, and a Complete installer with UAC, shortcuts, and uninstallation support. The About dialog can also update the application to the latest public release in one click.
+> v2.0.7 adds APK/XAPK installation support and is available as a standard portable package, a Complete portable package with ADB and ArgyllCMS `spotread`, and a Complete installer with UAC, shortcuts, and uninstallation support. The About dialog can also update the application to the latest public release in one click.
 
 ## Features
 
@@ -32,11 +32,12 @@ Current version: **v2.0.6**
 - The **Device Information** module reads the model, processor/SoC, cores and ABIs, memory, storage, battery, display, camera, Android version, security patch, serial numbers, and notable hardware features, with the ADB source shown for every field.
 - Device information can be copied as a complete summary, copied one field at a time by double-clicking, or exported as UTF-8 text, an Excel `.xlsx` workbook, or JSON. Excel export does not require Microsoft Excel to be installed. Specifications not exposed by Android are identified as unavailable instead of being guessed.
 - Device information is cached locally per device after a successful read. Reconnecting the same phone or switching among multiple phones restores the matching cache automatically, with actions to force a refresh or clear only the current phone's cache.
-- Creates multiple reusable APK groups and installs every APK sequentially with per-file status reporting.
-- Hover over an APK list item to view its complete file name and full path when columns are truncated.
+- Creates multiple reusable APK/XAPK groups and installs every package sequentially with per-file status reporting.
+- Supports regular APKs and XAPK bundles. XAPK installation handles base and split APKs together and transfers bundled `Android/obb` data to the correct device location.
+- Hover over an install-list item to view its complete file name and full path when columns are truncated.
 - Reorders groups by drag and drop; custom groups can be renamed by double-clicking, and the order is saved automatically.
 - Scans subfolders under the local `APKs` directory and exposes them as protected, folder-synchronized groups.
-- The split **Quick Install / Transfer** page installs dropped APKs on the left. On the right, choose `Download`, `DCIM`, `Pictures`, or the shared-storage root before dropping files or folders; directory structure is preserved.
+- The split **Quick Install / Transfer** page installs dropped APK or XAPK files on the left. On the right, choose `Download`, `DCIM`, `Pictures`, or the shared-storage root before dropping files or folders; directory structure is preserved.
 - Reads and adjusts device brightness using a slider, numeric input, or the `+` / `-` keys.
 - Adds automatic brightness adjustment using measured luminance with ArgyllCMS `spotread` and an external colorimeter. A closed loop repeatedly measures and adjusts Android brightness while the original manual controls remain available.
 - Controls auto brightness, 10-minute screen timeout, maximum timeout, and stay-awake-while-charging independently.
@@ -103,9 +104,9 @@ Use the latest version from the official page. Google states that current Platfo
 
 Each GitHub Release provides portable packages alongside a complete installer:
 
-- `AndroidADBTools-v2.0.6.zip`: the standard portable package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
-- `AndroidADBTools-v2.0.6-complete.zip`: the Complete portable package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
-- `AndroidADBTools-v2.0.6-complete-setup.exe`: the complete installer containing the same bundled tools as the Complete portable package. It installs into Program Files and provides Start menu shortcuts, an optional desktop shortcut, and uninstallation support.
+- `AndroidADBTools-v2.0.7.zip`: the standard portable package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.7-complete.zip`: the Complete portable package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.7-complete-setup.exe`: the complete installer containing the same bundled tools as the Complete portable package. It installs into Program Files and provides Start menu shortcuts, an optional desktop shortcut, and uninstallation support.
 
 1. Choose the package you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases). Fully extract a portable ZIP, or run Setup and accept the Windows UAC prompt for the installer.
 2. Run `AndroidADBTools.exe` from a portable folder, or launch the installed app from the Start menu.
@@ -114,7 +115,7 @@ Each GitHub Release provides portable packages alongside a complete installer:
 
 The app searches the saved ADB path, its own folder, `ADBtools\adb.exe`, `platform-tools\adb.exe`, the default Android SDK location, and the system `PATH`. If `spotread.exe` has not been selected, it also detects the Complete package's bundled `Argyll\bin\spotread.exe` and fills in the setting automatically.
 
-## Folder-Synchronized APK Groups
+## APK/XAPK Installation and Folder-Synchronized Groups
 
 Create folders next to the application using this structure:
 
@@ -122,12 +123,14 @@ Create folders next to the application using this structure:
 APKs/
 ├─ Common Tools/
 │  ├─ app1.apk
-│  └─ app2.apk
+│  └─ game.xapk
 └─ Test Apps/
    └─ test.apk
 ```
 
-Each direct child folder becomes an installation group when the app starts. APK contents are refreshed whenever the group is selected. These groups use a folder icon and are managed directly through the file system.
+Each direct child folder becomes an installation group when the app starts. APK and XAPK contents are refreshed whenever the group is selected. These groups use a folder icon and are managed directly through the file system.
+
+An XAPK is treated as an archive containing one or more APKs. The app validates archive paths and extracted size, uses ADB `install` for a single APK, and uses `install-multiple` for a base/split APK set. Bundled files under `Android/obb/<package>/` are transferred to `/sdcard/Android/obb/` after installation. If the phone or OEM firmware blocks writes to that location, the operation is reported as failed with details in the execution log.
 
 ## Phone Data Download
 

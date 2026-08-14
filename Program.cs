@@ -30,12 +30,12 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Android ADB 快速工具")]
-[assembly: AssemblyDescription("Android ADB 連線確認、APK 快速安裝與檔案傳輸工具")]
+[assembly: AssemblyDescription("Android ADB 連線確認、APK／XAPK 快速安裝與檔案傳輸工具")]
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.6.0")]
-[assembly: AssemblyFileVersion("2.0.6.0")]
+[assembly: AssemblyVersion("2.0.7.0")]
+[assembly: AssemblyFileVersion("2.0.7.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -324,6 +324,41 @@ namespace AndroidADBTools
         public override string ToString()
         {
             return DisplayName + "　｜　" + (Serial ?? "") + "　｜　" + ConnectionLabel;
+        }
+    }
+
+    public sealed class PackageInstallResult
+    {
+        public bool Success { get; set; }
+        public string Output { get; set; }
+
+        public PackageInstallResult()
+        {
+            Output = "";
+        }
+    }
+
+    public sealed class ExtractedXapk : IDisposable
+    {
+        public string TemporaryDirectory { get; set; }
+        public List<string> ApkPaths { get; set; }
+        public List<Tuple<string, string>> ObbFiles { get; set; }
+
+        public ExtractedXapk()
+        {
+            TemporaryDirectory = "";
+            ApkPaths = new List<string>();
+            ObbFiles = new List<Tuple<string, string>>();
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (!String.IsNullOrWhiteSpace(TemporaryDirectory) && Directory.Exists(TemporaryDirectory))
+                    Directory.Delete(TemporaryDirectory, true);
+            }
+            catch { }
         }
     }
 
@@ -729,7 +764,7 @@ namespace AndroidADBTools
             };
             Label subtitle = new Label
             {
-                Text = "連線確認、常用 APK 安裝與快速安裝",
+                Text = "連線確認、常用 APK／XAPK 安裝與快速安裝",
                 ForeColor = Muted,
                 AutoSize = true,
                 Location = new Point(12, 42)
@@ -835,7 +870,7 @@ namespace AndroidADBTools
             };
             installAllDevicesCheck = new CheckBox
             {
-                Text = "APK 安裝到全部裝置",
+                Text = "安裝套件到全部裝置",
                 ForeColor = Muted,
                 AutoSize = true,
                 Enabled = false,
@@ -887,7 +922,7 @@ namespace AndroidADBTools
             mainTabs.Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold);
             mainTabs.BackColor = Bg;
             mainTabs.ItemSize = new Size(58, 154);
-            TabPage groupsTab = NewTab("▦  常用 APK 安裝", Color.FromArgb(53, 120, 219));
+            TabPage groupsTab = NewTab("▦  常用 APK／XAPK", Color.FromArgb(53, 120, 219));
             TabPage singleTab = NewTab("⇩  快速安裝 / 傳輸", Color.FromArgb(126, 87, 194));
             TabPage brightnessTab = NewTab("☀  亮度調整", Color.FromArgb(211, 132, 42));
             brightnessTabPage = brightnessTab;
@@ -1049,7 +1084,7 @@ namespace AndroidADBTools
                 BackColor = Card,
                 WrapContents = false
             };
-            addGroupApksButton = NewButton("加入 APK", false, 105);
+            addGroupApksButton = NewButton("加入套件", false, 105);
             removeGroupApkButton = NewButton("移除選取", false, 105);
             installGroupButton = NewButton("全部安裝", true, 120);
             addGroupApksButton.Click += AddApksToGroup;
@@ -1182,9 +1217,9 @@ namespace AndroidADBTools
             using (Font titleFont = new Font(Font.FontFamily, 20F, FontStyle.Bold))
             using (Font hintFont = new Font(Font.FontFamily, 11F, FontStyle.Regular))
             {
-                DrawSmoothText(e.Graphics, quickInstalling ? "正在安裝 APK..." : "把 APK 拖到這裡安裝", titleFont,
+                DrawSmoothText(e.Graphics, quickInstalling ? "正在安裝套件..." : "把 APK／XAPK 拖到這裡安裝", titleFont,
                     quickInstalling ? Color.FromArgb(255, 190, 75) : TextColor, titleBounds, StringAlignment.Center, StringAlignment.Center, false);
-                DrawSmoothText(e.Graphics, quickInstalling ? "請勿拔除 USB，完成後會顯示安裝結果" : "放開後立即開始安裝\n也可按一下手動選擇 APK",
+                DrawSmoothText(e.Graphics, quickInstalling ? "請勿拔除 USB，完成後會顯示安裝結果" : "放開後立即開始安裝\n也可按一下手動選擇套件",
                     hintFont, Muted, hintBounds, StringAlignment.Center, StringAlignment.Near, false);
             }
         }
@@ -2675,7 +2710,7 @@ namespace AndroidADBTools
             list.DrawColumnHeader += DrawApkColumnHeader;
             list.DrawItem += delegate(object sender, DrawListViewItemEventArgs e) { };
             list.DrawSubItem += DrawApkSubItem;
-            list.Columns.Add("APK 檔案", 280);
+            list.Columns.Add("安裝套件", 280);
             list.Columns.Add("位置", 400);
             list.Columns.Add("狀態", 150);
             Panel headerCornerCover = new Panel
@@ -2764,7 +2799,7 @@ namespace AndroidADBTools
             }
             ApkGroup group = groupList.Items[e.Index] as ApkGroup;
             string name = group == null ? groupList.Items[e.Index].ToString() : group.Name;
-            string count = group == null ? "" : (group.IsFolderGroup ? "資料夾同步　" : "") + group.Apks.Count + " 個 APK";
+            string count = group == null ? "" : (group.IsFolderGroup ? "資料夾同步　" : "") + group.Apks.Count + " 個套件";
             int textLeft = e.Bounds.X + ScaleValue(14, currentDpiScale);
             int horizontalPadding = ScaleValue(14, currentDpiScale);
             int nameHeight = Math.Max(groupList.Font.Height + ScaleValue(4, currentDpiScale),
@@ -2997,7 +3032,7 @@ namespace AndroidADBTools
             {
                 ApkGroup group = groupList.Items[index] as ApkGroup;
                 string text = group == null ? groupList.Items[index].ToString() : group.Name + "（" +
-                    (group.IsFolderGroup ? "資料夾同步，" : "") + group.Apks.Count + " 個 APK）";
+                    (group.IsFolderGroup ? "資料夾同步，" : "") + group.Apks.Count + " 個套件）";
                 groupNameToolTip.Show(text, groupList, e.X + 16, e.Y + 20, 8000);
             }
         }
@@ -4712,7 +4747,7 @@ namespace AndroidADBTools
             {
                 if (!Directory.Exists(group.FolderPath)) return;
                 IEnumerable<string> files = Directory.GetFiles(group.FolderPath, "*", SearchOption.AllDirectories)
-                    .Where(delegate(string path) { return String.Equals(Path.GetExtension(path), ".apk", StringComparison.OrdinalIgnoreCase); })
+                    .Where(IsInstallPackageFile)
                     .OrderBy(delegate(string path) { return path; }, StringComparer.OrdinalIgnoreCase);
                 foreach (string path in files) group.Apks.Add(new ApkEntry(Path.GetFullPath(path)));
             }
@@ -4755,7 +4790,7 @@ namespace AndroidADBTools
             {
                 foreach (ApkGroup group in allGroups)
                 {
-                    int width = TextRenderer.MeasureText(graphics, group.Name + "　" + group.Apks.Count + " 個 APK", groupList.Font).Width + 44;
+                    int width = TextRenderer.MeasureText(graphics, group.Name + "　" + group.Apks.Count + " 個安裝套件", groupList.Font).Width + 44;
                     if (width > widest) widest = width;
                 }
             }
@@ -4784,7 +4819,7 @@ namespace AndroidADBTools
             if (group == null)
             {
                 groupTitle.Text = "請建立或選擇安裝組合";
-                groupHint.Text = "建立組合後，可將 APK 直接拖到右側清單";
+                groupHint.Text = "建立組合後，可將 APK 或 XAPK 直接拖到右側清單";
                 UpdateGroupActionButtons();
                 return;
             }
@@ -4795,8 +4830,8 @@ namespace AndroidADBTools
             }
             groupTitle.Text = group.Name;
             groupHint.Text = group.IsFolderGroup
-                ? group.Apks.Count + " 個 APK　｜　來源：APKs\\" + group.Name + "　｜　資料夾同步組合不可改名"
-                : group.Apks.Count + " 個 APK　｜　可拖放 APK 到右側清單　｜　雙擊左側組合可編輯名稱";
+                ? group.Apks.Count + " 個安裝套件　｜　來源：APKs\\" + group.Name + "　｜　資料夾同步組合不可改名"
+                : group.Apks.Count + " 個安裝套件　｜　可拖放 APK／XAPK 到右側清單　｜　雙擊左側組合可編輯名稱";
             foreach (ApkEntry entry in group.Apks)
             {
                 AddApkListItem(apkList, entry.Path, File.Exists(entry.Path) ? "等待安裝" : "檔案不存在");
@@ -4842,7 +4877,7 @@ namespace AndroidADBTools
         {
             ApkGroup group = SelectedGroup();
             if (group == null || group.IsFolderGroup || busy) return;
-            if (MessageBox.Show(this, "確定刪除「" + group.Name + "」？\nAPK 原始檔不會被刪除。", "刪除組合", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (MessageBox.Show(this, "確定刪除「" + group.Name + "」？\nAPK／XAPK 原始檔不會被刪除。", "刪除組合", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             settings.Groups.Remove(group);
             if (settings.GroupOrder != null) settings.GroupOrder.RemoveAll(delegate(string id) { return String.Equals(id, group.Id, StringComparison.OrdinalIgnoreCase); });
             SaveSettings();
@@ -4868,7 +4903,7 @@ namespace AndroidADBTools
             ApkGroup group = SelectedGroup();
             if (busy || group == null || group.IsFolderGroup || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (files.Any(delegate(string f) { return File.Exists(f) && String.Equals(Path.GetExtension(f), ".apk", StringComparison.OrdinalIgnoreCase); }))
+            if (files.Any(delegate(string f) { return File.Exists(f) && IsInstallPackageFile(f); }))
                 e.Effect = DragDropEffects.Copy;
         }
 
@@ -4878,7 +4913,7 @@ namespace AndroidADBTools
             ApkGroup group = SelectedGroup();
             if (group == null || group.IsFolderGroup) return;
             string[] files = ((string[])e.Data.GetData(DataFormats.FileDrop))
-                .Where(delegate(string f) { return File.Exists(f) && String.Equals(Path.GetExtension(f), ".apk", StringComparison.OrdinalIgnoreCase); })
+                .Where(delegate(string f) { return File.Exists(f) && IsInstallPackageFile(f); })
                 .ToArray();
             AddApksToGroup(group, files);
         }
@@ -4914,8 +4949,8 @@ namespace AndroidADBTools
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
-                dialog.Title = "選擇 APK";
-                dialog.Filter = "Android APK (*.apk)|*.apk";
+                dialog.Title = "選擇 APK 或 XAPK";
+                dialog.Filter = "Android 安裝套件 (*.apk;*.xapk)|*.apk;*.xapk|APK (*.apk)|*.apk|XAPK (*.xapk)|*.xapk";
                 dialog.Multiselect = true;
                 return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileNames : new string[0];
             }
@@ -4933,7 +4968,7 @@ namespace AndroidADBTools
             if (!busy && e.Data.GetDataPresent(DataFormats.FileDrop))
             {
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-                e.Effect = files.Any(delegate(string f) { return File.Exists(f) && String.Equals(Path.GetExtension(f), ".apk", StringComparison.OrdinalIgnoreCase); }) ? DragDropEffects.Copy : DragDropEffects.None;
+                e.Effect = files.Any(delegate(string f) { return File.Exists(f) && IsInstallPackageFile(f); }) ? DragDropEffects.Copy : DragDropEffects.None;
             }
             quickInstallDragOver = e.Effect == DragDropEffects.Copy;
             if (dropPanel != null) dropPanel.Invalidate();
@@ -4951,7 +4986,7 @@ namespace AndroidADBTools
             if (dropPanel != null) dropPanel.Invalidate();
             if (busy || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             string[] files = ((string[])e.Data.GetData(DataFormats.FileDrop))
-                .Where(delegate(string f) { return File.Exists(f) && String.Equals(Path.GetExtension(f), ".apk", StringComparison.OrdinalIgnoreCase); }).ToArray();
+                .Where(delegate(string f) { return File.Exists(f) && IsInstallPackageFile(f); }).ToArray();
             await InstallQuickFilesAsync(files);
         }
 
@@ -4992,7 +5027,7 @@ namespace AndroidADBTools
             foreach (string file in files)
             {
                 string full = Path.GetFullPath(file);
-                if (File.Exists(full) && String.Equals(Path.GetExtension(full), ".apk", StringComparison.OrdinalIgnoreCase)) unique.Add(full);
+                if (File.Exists(full) && IsInstallPackageFile(full)) unique.Add(full);
             }
             if (unique.Count == 0) return;
             if (!await EnsureReadyDeviceAsync()) return;
@@ -7833,7 +7868,7 @@ namespace AndroidADBTools
             ApkGroup group = SelectedGroup();
             if (group == null || group.Apks.Count == 0)
             {
-                MessageBox.Show(this, "這個組合還沒有 APK。", "沒有 APK", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "這個組合還沒有 APK 或 XAPK。", "沒有安裝套件", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
             if (!await EnsureReadyDeviceAsync()) return;
@@ -7856,7 +7891,7 @@ namespace AndroidADBTools
             StringBuilder report = new StringBuilder();
             try
             {
-                Log("開始安裝 " + title + "，共 " + jobs.Count + " 個 APK，目標 " + targetDevices.Count + " 台裝置。");
+                Log("開始安裝 " + title + "，共 " + jobs.Count + " 個套件，目標 " + targetDevices.Count + " 台裝置。");
                 foreach (DeviceInfo device in targetDevices)
                 {
                     int deviceSuccess = 0;
@@ -7884,12 +7919,9 @@ namespace AndroidADBTools
                         SetItemStatus(item, targetDevices.Count == 1 ? "安裝中..." :
                             "正在安裝到 " + device.DisplayName + "...", Color.FromArgb(255, 190, 75));
                         Log("[" + deviceLabel + "] 安裝：" + Path.GetFileName(path));
-                        string flags = "-r" + (settings.AllowDowngrade ? " -d" : "");
-                        string args = "-s " + Quote(device.Serial) + " install " + flags + " " + Quote(path);
-                        AdbResult result = await RunAdbAsync(args);
-                        string combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
-                        bool ok = result.Started && result.ExitCode == 0 &&
-                            combined.IndexOf("Success", StringComparison.OrdinalIgnoreCase) >= 0;
+                        PackageInstallResult result = await InstallPackageOnDeviceAsync(device, path);
+                        string combined = result.Output ?? "";
+                        bool ok = result.Success;
                         if (ok)
                         {
                             successByPath[path] = successByPath[path] + 1;
@@ -8007,6 +8039,157 @@ namespace AndroidADBTools
             item.EnsureVisible();
         }
 
+        private static bool IsInstallPackageFile(string path)
+        {
+            string extension = Path.GetExtension(path) ?? "";
+            return String.Equals(extension, ".apk", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(extension, ".xapk", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private async Task<PackageInstallResult> InstallPackageOnDeviceAsync(DeviceInfo device, string path)
+        {
+            if (!String.Equals(Path.GetExtension(path), ".xapk", StringComparison.OrdinalIgnoreCase))
+            {
+                string flags = "-r" + (settings.AllowDowngrade ? " -d" : "");
+                AdbResult apkResult = await RunAdbAsync("-s " + Quote(device.Serial) + " install " + flags + " " + Quote(path));
+                string apkOutput = ((apkResult.Output ?? "") + " " + (apkResult.Error ?? "")).Trim();
+                return new PackageInstallResult
+                {
+                    Success = apkResult.Started && apkResult.ExitCode == 0 &&
+                        apkOutput.IndexOf("Success", StringComparison.OrdinalIgnoreCase) >= 0,
+                    Output = apkOutput
+                };
+            }
+
+            try
+            {
+                using (ExtractedXapk package = await Task.Run(delegate { return ExtractXapk(path); }))
+                {
+                    Log("[" + device.DisplayName + "] XAPK 解析完成：" + package.ApkPaths.Count +
+                        " 個 APK、" + package.ObbFiles.Count + " 個 OBB 檔案。");
+                    string flags = "-r" + (settings.AllowDowngrade ? " -d" : "");
+                    string command = package.ApkPaths.Count == 1 ? "install " : "install-multiple ";
+                    string apkArguments = String.Join(" ", package.ApkPaths.Select(Quote).ToArray());
+                    AdbResult install = await RunAdbAsync("-s " + Quote(device.Serial) + " " + command + flags + " " + apkArguments);
+                    string output = ((install.Output ?? "") + " " + (install.Error ?? "")).Trim();
+                    bool installed = install.Started && install.ExitCode == 0 &&
+                        output.IndexOf("Success", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!installed) return new PackageInstallResult { Success = false, Output = output };
+
+                    foreach (Tuple<string, string> obb in package.ObbFiles)
+                    {
+                        string remotePath = "/sdcard/Android/obb/" + obb.Item2;
+                        string remoteDirectory = remotePath.Substring(0, remotePath.LastIndexOf('/'));
+                        AdbResult createDirectory = await RunAdbAsync("-s " + Quote(device.Serial) +
+                            " shell mkdir -p " + Quote(remoteDirectory));
+                        if (!AdbCommandSucceeded(createDirectory))
+                        {
+                            string error = ((createDirectory.Output ?? "") + " " + (createDirectory.Error ?? "")).Trim();
+                            return new PackageInstallResult { Success = false, Output = "APK 已安裝，但無法建立 OBB 資料夾：" + error };
+                        }
+                        AdbResult push = await RunAdbAsync("-s " + Quote(device.Serial) + " push " + Quote(obb.Item1) + " " + Quote(remotePath));
+                        if (!AdbCommandSucceeded(push))
+                        {
+                            string error = ((push.Output ?? "") + " " + (push.Error ?? "")).Trim();
+                            return new PackageInstallResult { Success = false, Output = "APK 已安裝，但 OBB 傳輸失敗：" + error };
+                        }
+                    }
+                    return new PackageInstallResult { Success = true, Output = output };
+                }
+            }
+            catch (InvalidDataException ex)
+            {
+                return new PackageInstallResult { Success = false, Output = "XAPK 無效：" + ex.Message };
+            }
+            catch (Exception ex)
+            {
+                return new PackageInstallResult { Success = false, Output = "XAPK 處理失敗：" + ex.Message };
+            }
+        }
+
+        private static ExtractedXapk ExtractXapk(string path)
+        {
+            ExtractedXapk result = new ExtractedXapk
+            {
+                TemporaryDirectory = Path.Combine(Path.GetTempPath(), "AndroidADBTools-XAPK-" + Guid.NewGuid().ToString("N"))
+            };
+            Directory.CreateDirectory(result.TemporaryDirectory);
+            try
+            {
+                using (ZipArchive archive = ZipFile.OpenRead(path))
+                {
+                    if (archive.Entries.Count > 4096) throw new InvalidDataException("封包內項目數量異常。");
+                    long totalSize = 0;
+                    int apkIndex = 0;
+                    foreach (ZipArchiveEntry entry in archive.Entries)
+                    {
+                        if (String.IsNullOrEmpty(entry.Name)) continue;
+                        totalSize += entry.Length;
+                        if (entry.Length > 12L * 1024 * 1024 * 1024 || totalSize > 24L * 1024 * 1024 * 1024)
+                            throw new InvalidDataException("封包解壓後大小超過安全上限。");
+
+                        string normalized = (entry.FullName ?? "").Replace('\\', '/').TrimStart('/');
+                        string[] parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length == 0 || parts.Any(delegate(string part) { return part == "." || part == ".."; }))
+                            throw new InvalidDataException("封包包含不安全的檔案路徑。");
+
+                        if (String.Equals(Path.GetExtension(entry.Name), ".apk", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string fileName = apkIndex.ToString("D3") + "-" + MakeSafeFileName(entry.Name);
+                            string localPath = Path.Combine(result.TemporaryDirectory, fileName);
+                            entry.ExtractToFile(localPath, true);
+                            result.ApkPaths.Add(localPath);
+                            apkIndex++;
+                            continue;
+                        }
+
+                        const string obbPrefix = "Android/obb/";
+                        if (normalized.StartsWith(obbPrefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            string relative = normalized.Substring(obbPrefix.Length);
+                            string[] relativeParts = relative.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (relativeParts.Length < 2 || relativeParts.Any(delegate(string part) { return !IsSafeAndroidPathSegment(part); }))
+                                throw new InvalidDataException("OBB 路徑格式不正確。");
+                            string localPath = Path.Combine(result.TemporaryDirectory, "obb", Path.Combine(relativeParts));
+                            string localDirectory = Path.GetDirectoryName(localPath);
+                            if (!String.IsNullOrWhiteSpace(localDirectory)) Directory.CreateDirectory(localDirectory);
+                            entry.ExtractToFile(localPath, true);
+                            result.ObbFiles.Add(Tuple.Create(localPath, String.Join("/", relativeParts)));
+                        }
+                    }
+                }
+                if (result.ApkPaths.Count == 0) throw new InvalidDataException("封包中找不到 APK 檔案。");
+                result.ApkPaths = result.ApkPaths.OrderBy(delegate(string apk)
+                {
+                    string name = Path.GetFileName(apk);
+                    return name.IndexOf("base.apk", StringComparison.OrdinalIgnoreCase) >= 0 ? "0" + name : "1" + name;
+                }, StringComparer.OrdinalIgnoreCase).ToList();
+                return result;
+            }
+            catch
+            {
+                result.Dispose();
+                throw;
+            }
+        }
+
+        private static string MakeSafeFileName(string name)
+        {
+            string value = Path.GetFileName(name) ?? "package.apk";
+            foreach (char invalid in Path.GetInvalidFileNameChars()) value = value.Replace(invalid, '_');
+            return String.IsNullOrWhiteSpace(value) ? "package.apk" : value;
+        }
+
+        private static bool IsSafeAndroidPathSegment(string segment)
+        {
+            if (String.IsNullOrWhiteSpace(segment) || segment == "." || segment == "..") return false;
+            foreach (char value in segment)
+            {
+                if (!(Char.IsLetterOrDigit(value) || value == '.' || value == '_' || value == '-')) return false;
+            }
+            return true;
+        }
+
         private static string FriendlyInstallError(string output)
         {
             string value = output ?? "";
@@ -8016,6 +8199,8 @@ namespace AndroidADBTools
             if (value.IndexOf("INSTALL_PARSE_FAILED", StringComparison.OrdinalIgnoreCase) >= 0) return "APK 無效或不相容";
             if (value.IndexOf("INSTALL_FAILED_NO_MATCHING_ABIS", StringComparison.OrdinalIgnoreCase) >= 0) return "APK 不支援此手機架構";
             if (value.IndexOf("INSTALL_FAILED_USER_RESTRICTED", StringComparison.OrdinalIgnoreCase) >= 0) return "手機禁止透過 USB 安裝";
+            if (value.IndexOf("XAPK 無效", StringComparison.OrdinalIgnoreCase) >= 0) return value;
+            if (value.IndexOf("OBB", StringComparison.OrdinalIgnoreCase) >= 0) return value;
             if (value.IndexOf("unauthorized", StringComparison.OrdinalIgnoreCase) >= 0) return "手機尚未允許 USB 偵錯";
             if (value.IndexOf("offline", StringComparison.OrdinalIgnoreCase) >= 0) return "手機連線離線";
             string clean = CleanOutput(value);
@@ -8085,7 +8270,7 @@ namespace AndroidADBTools
                 };
                 Label description = new Label
                 {
-                    Text = renaming ? "輸入新的組合名稱，儲存後會立即更新清單。" : "輸入容易辨識的名稱，建立後即可加入 APK。",
+                    Text = renaming ? "輸入新的組合名稱，儲存後會立即更新清單。" : "輸入容易辨識的名稱，建立後即可加入 APK 或 XAPK。",
                     ForeColor = Muted,
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleLeft
