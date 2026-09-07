@@ -30,6 +30,9 @@
     <Reference Include="System.Windows.Forms" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AdbPortSelector.cs" />
+    <Compile Include="AppLabelReaderPayload.cs" />
+    <Compile Include="InstalledAppParser.cs" />
     <Compile Include="Program.cs" />
     <None Include="App.config" />
     <None Include="LICENSE">

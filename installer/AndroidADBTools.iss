@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "2.0.7"
+  #define MyAppVersion "2.0.8"
 #endif
 #ifndef PackageSource
   #define PackageSource "..\release\AndroidADBTools-v" + MyAppVersion + "-complete"

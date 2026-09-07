@@ -14,11 +14,11 @@
 
 一套可使用免安裝可攜式版本或完整安裝版的 Windows 圖形化 ADB 工具，協助使用者快速確認 Android 裝置連線、批次安裝 APK、調整常用系統設定、擷取畫面與備份手機相片資料。
 
-目前版本：**v2.0.7**
+目前版本：**v2.0.8**
 
 [查看完整更新紀錄](CHANGELOG.md)
 
-> v2.0.7 新增 APK／XAPK 安裝支援，並同時提供標準可攜式版、內含 ADB 與 ArgyllCMS `spotread` 的 Complete 可攜式版，以及支援 UAC、捷徑與解除安裝的 Complete 完整安裝版。程式也能從「關於」頁面一鍵更新到最新公開版本。
+> v2.0.8 新增手機程式管理、阿輝自家工具下載更新、連線等待與 ADB 自動換埠，並優化亮度校正、依手機保存與快速套用結果。提供標準可攜式版、Complete 可攜式版與 Complete 完整安裝版；可在「關於」進行線上更新。
 
 ## 主要功能
 
@@ -26,22 +26,28 @@
 - 內建 Wi-Fi 無線偵錯管理，可直接輸入手機 IP、配對 Port、六位數配對碼與偵錯 Port 完成配對、連線及中斷。
 - 保存已配對裝置紀錄，支援啟動時自動重新連線、mDNS 區域網路搜尋，以及 ADB 版本與相容性檢查。
 - 支援多裝置選擇，顯示型號、序號及 USB／Wi-Fi 標記並記住上次選擇；APK 可同時安裝到全部已連線裝置。
+- 「程式管理」可掃描目前手機中由使用者安裝的應用程式，直接顯示手機系統提供的易懂程式名稱，依程式名稱、套件名稱或安裝來源搜尋、點擊欄位標題切換正向／逆向排序，並勾選多個項目一次批次移除；也可隱藏經 Android 或裝置管理政策確認無法移除的程式。
 - 「手機資訊」可讀取型號、處理器／SoC、核心與 ABI、記憶體、儲存空間、電池、螢幕、相機、Android 版本、安全性更新、序號及主要硬體功能，並標示每項資料來源。
 - 手機資訊支援一鍵複製完整摘要、雙擊複製單項內容，以及匯出 UTF-8 文字檔、Excel `.xlsx` 或 JSON；Excel 匯出不需要預先安裝 Microsoft Excel。Android 未公開的規格會明確標示而不使用推測值。
 - 手機資訊讀取後會依裝置識別保存本機快取；同一台手機再次連接或在多台手機之間切換時會自動帶入，並可強制更新或只清除目前手機的快取。
 - 「關於」頁面提供一鍵線上更新：自動下載並驗證 GitHub 最新公開版本、替換目前程式後重新啟動；安裝位置需要系統管理員權限時會顯示 Windows UAC 授權畫面。
 - 可選擇免安裝可攜式版本，或使用內含 ADB、`spotread.exe`、開始功能表捷徑與解除安裝功能的 Complete 安裝版。
+- 內建「阿輝自家工具」，可直接檢查、下載與安裝 TestTools Android、PowerTesting Web、PowerTesting Monitor 的最新 GitHub 正式版 APK；再次操作會自動檢查線上更新。
 - 建立多組「常用 APK／XAPK 安裝」清單，一鍵依序安裝並顯示每個套件的結果。
 - 支援標準 APK 與 XAPK；XAPK 會自動安裝 base／split APK，並將封包內的 `Android/obb` 資料傳輸到正確位置。
 - 安裝清單欄位過長時，可將滑鼠移到項目上查看完整檔名與完整位置。
 - 「我的組合」支援拖曳排序；自訂組合可雙擊直接編輯名稱，排序會自動保存。
+- 自建組合內的 APK／XAPK 也可拖曳調整順序；項目右鍵可單獨快速安裝或從清單移除。
 - 自動掃描程式旁 `APKs` 目錄中的子資料夾，建立不可誤刪的同步安裝組合。
+- 資料夾同步組合維持唯讀，項目右鍵仍可單獨快速安裝，介面不顯示無效的移除操作。
+- 「常用程式安裝」及「快速傳輸安裝」在實際安裝或傳輸前會即時確認手機連線；未就緒時顯示可中止的等待視窗，連線並完成偵錯授權後自動繼續原本操作。
+- 若 Windows 保留或禁止 ADB 預設使用的 TCP 5037，程式會自動選擇其他可用連接埠並讓所有 ADB 功能共用；介面會顯示實際連接埠與較明確的失敗原因。
 - 「快速安裝 / 傳輸」提供左右雙拖曳區：左側拖入 APK 或 XAPK 立即安裝；右側可選 `Download`、`DCIM`、`Pictures` 或內部儲存根目錄，再拖入檔案或資料夾並保留完整結構。
 - 讀取與即時調整手機亮度，支援滑桿、數值及 `+`／`-` 鍵。
 - 新增實測自動調整亮度功能：搭配 ArgyllCMS `spotread` 與外接色度計，以閉迴路反覆量測並調整 Android 亮度至目標值；原有手動模式完整保留。
 - 快速設定自動亮度、10 分鐘關屏、最長關屏時間及充電時保持螢幕開啟。
 - 各項快速設定獨立執行並讀回驗證；單項失敗不影響其他設定。
-- 快速調整媒體音量、在手機開啟網址；手機截圖可儲存為 PNG，或直接複製到 Windows 剪貼簿。
+- 媒體音量可快速調到最低、50% 或最高；50% 會依手機實際音量範圍計算並讀回確認。另可在手機開啟網址，手機截圖可儲存為 PNG 或直接複製到 Windows 剪貼簿。
 - 下載手機 `DCIM`、`Pictures`、`Picture` 內的檔案，可建立 ZIP 壓縮包或直接保留原始資料夾結構。
 - 資料夾模式可依手機分別記錄上次完整下載時間，後續只傳輸新增或修改的檔案，並可手動重置紀錄。
 - 下載前先取得檔案大小，可略過超過自訂上限的單一檔案（預設 2 GB）。
@@ -103,9 +109,9 @@
 
 GitHub Release 同時提供可攜式版本與完整安裝版：
 
-- `AndroidADBTools-v2.0.7.zip`：標準可攜式版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
-- `AndroidADBTools-v2.0.7-complete.zip`：Complete 可攜式版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
-- `AndroidADBTools-v2.0.7-complete-setup.exe`：完整安裝版，包含與 Complete 可攜式版相同的工具，會安裝到 Program Files，提供開始功能表、選配桌面捷徑與解除安裝功能。
+- `AndroidADBTools-v2.0.8.zip`：標準可攜式版，只包含 AndroidADBTools；適合已安裝 Android Platform-Tools 或希望自行管理工具版本的使用者。
+- `AndroidADBTools-v2.0.8-complete.zip`：Complete 可攜式版，額外內含 Android ADB 37.0.0 與 ArgyllCMS 3.5.0 `spotread.exe`，解壓縮後會自動偵測，不必另外指定。
+- `AndroidADBTools-v2.0.8-complete-setup.exe`：完整安裝版，包含與 Complete 可攜式版相同的工具，會安裝到 Program Files，提供開始功能表、選配桌面捷徑與解除安裝功能。
 
 1. 到 [Releases](https://github.com/ahui3c/AndroidADBTools/releases) 選擇需要的版本。可攜式版請完整解壓縮；安裝版直接執行 Setup 並接受 Windows UAC 授權。
 2. 可攜式版執行 `AndroidADBTools.exe`；安裝版可從開始功能表啟動。
@@ -115,6 +121,20 @@ GitHub Release 同時提供可攜式版本與完整安裝版：
 程式會依序搜尋：已儲存路徑、程式旁的 `adb.exe`、`ADBtools\adb.exe`、`platform-tools\adb.exe`、Android SDK 預設位置及系統 `PATH`。尚未指定 `spotread.exe` 時，也會自動搜尋 Complete 版內附的 `Argyll\bin\spotread.exe` 並填入設定。
 
 ## APK／XAPK 安裝與資料夾同步
+
+「阿輝自家工具」固定顯示在常用程式安裝清單最上方，來源為下列 ahui3c GitHub 專案的最新正式 Release：
+
+- [TestTools Android](https://github.com/ahui3c/TestTools_Android)
+- [PowerTesting Web](https://github.com/ahui3c/powertesting-web-Android)
+- [PowerTesting Monitor](https://github.com/ahui3c/powertesting-monitor-Android)
+
+每個程式都會直接顯示繁體中文用途說明。下載與安裝是兩個獨立動作：「下載／更新選取」只會檢查 GitHub 最新正式版、下載 APK 到 `%LocalAppData%\AndroidADBTools\ahui-tools`，並核對檔案大小與 SHA-256；「安裝選取」與右鍵「安裝已下載版本」只會將本機已有的 APK 交給 ADB，不會自行連線下載。程式安裝在 Program Files 時也不需要為 APK 快取取得 UAC 權限。
+
+執行安裝前會重新檢查目前的 ADB 連線。若手機尚未接上、離線或等待 USB 偵錯授權，程式會顯示等待視窗並每 2 秒重新檢查；完成連線後自動開始安裝，也可按「中止本次操作」取消。下載／更新 APK 本身不需要手機連線。
+
+- **TestTools Android**：整合測試連結、亮度測試、快速截圖、影音備份與手機資訊的手機測試工具箱。
+- **PowerTesting Web**：自動模擬網頁瀏覽，依照設定時間記錄手機電量消耗。
+- **PowerTesting Monitor**：以浮動視窗監控各種測試情境耗電，保存電量變化與測試紀錄。
 
 可在程式旁建立以下結構：
 
@@ -146,6 +166,7 @@ XAPK 是包含一個或多個 APK 的壓縮封包。程式會先檢查封包路�
 ## 快速傳輸到手機
 
 - 切換到「快速安裝 / 傳輸」，將檔案或資料夾拖到右側傳輸區。
+- 放開檔案後會先重新確認手機連線；尚未就緒時可等待自動繼續，或中止本次傳輸。
 - 先選擇手機目的地；預設為 `/sdcard/Download/`，也可選 `/sdcard/DCIM/`、`/sdcard/Pictures/` 或內部儲存根目錄 `/sdcard/`。
 - 放開後會自動傳輸到目前選擇的目的地。
 - 拖入資料夾時會保留最外層資料夾名稱及所有子目錄結構。
@@ -153,13 +174,14 @@ XAPK 是包含一個或多個 APK 的壓縮封包。程式會先檢查封包路�
 
 ## 實測自動調整亮度功能
 
-「亮度調整」頁上方保留原本的手動滑桿、數值與鍵盤控制；下方新增外接色度計閉迴路校準：
+「亮度調整」頁上方為全自動校正，下方為手動滑桿、數值與鍵盤控制：
 
 1. Complete 版已內附 ArgyllCMS 3.5.0 `spotread.exe`；標準版請從 [ArgyllCMS 官方網站](https://www.argyllcms.com/) 下載 Windows 版本，再於程式選擇 `bin\spotread.exe`。
 2. 連接手機與 ArgyllCMS 相容的顯示器量測設備，將感測面貼平手機畫面中央。
 3. 按「手機開啟白色測試圖」，並確認圖片檢視器為全螢幕、沒有工具列或通知遮擋。
 4. 先按「設備測試」。成功取得絕對發光量測的 Y 值後，輸入目標（例如 200 nit）與允許誤差，再開始全自動調整。
-5. 程式會關閉 Android 自動亮度、反覆設定亮度、等待畫面穩定並呼叫 `spotread -e -O`；達標後保留最接近目標的 Android 亮度值。
+5. 程式一開始就強制關閉 Android 自動亮度並讀回確認；確認成功才反覆設定亮度、等待畫面穩定並呼叫 `spotread -e -O`。
+6. 成功達標後可按「儲存本次結果」。紀錄綁定手機識別，保存目標／實測 nit、Android 亮度值與時間；下次同手機連線時按「快速套用已存結果」即可套用，無須重新量測。每台手機保留最近一次保存結果；載入顯示的是歷史實測值。
 
 可選擇 `.ccss`／`.ccmx` 顯示器修正檔，以改善特定 OLED／LCD 光譜與色度計的配對誤差。此功能只調整白畫面的實測亮度，不等同完整色彩校正、ICC 校正或 HDR／高亮度模式控制。目標若超過手機當下可達亮度，程式會套用量測到的最接近結果並說明誤差。
 

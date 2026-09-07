@@ -15,7 +15,8 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll `
     /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll `
     /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll `
-    /out:"$outDir\AndroidADBTools.exe" "$root\Program.cs"
+    /out:"$outDir\AndroidADBTools.exe" "$root\AdbPortSelector.cs" "$root\AppLabelReaderPayload.cs" `
+    "$root\InstalledAppParser.cs" "$root\Program.cs"
 if ($LASTEXITCODE -ne 0) { throw '編譯失敗。' }
 Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $outDir -Force
 Copy-Item -LiteralPath (Join-Path $root 'README.en.md') -Destination $outDir -Force

@@ -14,11 +14,11 @@
 
 A Windows GUI for ADB, available as portable packages or a complete installer, that helps users verify Android device connections, install APKs in batches, adjust common device settings, capture screenshots, and back up phone photos.
 
-Current version: **v2.0.7**
+Current version: **v2.0.8**
 
 [View the complete changelog](CHANGELOG.md)
 
-> v2.0.7 adds APK/XAPK installation support and is available as a standard portable package, a Complete portable package with ADB and ArgyllCMS `spotread`, and a Complete installer with UAC, shortcuts, and uninstallation support. The About dialog can also update the application to the latest public release in one click.
+> v2.0.8 adds installed-app management, curated tool downloads, connection waiting and automatic ADB port fallback, plus device-bound brightness calibration records and quick apply. Standard portable, Complete portable and Complete installer downloads are available; use About for online updates.
 
 ## Features
 
@@ -29,20 +29,26 @@ Current version: **v2.0.7**
 - Includes a Wi-Fi debugging manager for pairing, connecting, and disconnecting with the phone IP, pairing port, six-digit code, and debugging port.
 - Saves paired-device records, supports automatic reconnection at startup, discovers LAN devices through mDNS, and checks ADB version compatibility.
 - Supports multiple connected devices with model, serial, and USB/Wi-Fi labels, remembers the last primary device, and can install APKs to every connected device.
+- The **App Management** module scans user-installed applications and reads their human-friendly labels directly from the phone. It supports app-name, package, or installer search, toggles ascending or descending sorting from the column headers, and removes multiple checked apps in one batch. It can hide apps that Android or device policy confirms cannot be removed, verifies the target phone again before removal, and does not expose internal APK paths in the interface.
 - The **Device Information** module reads the model, processor/SoC, cores and ABIs, memory, storage, battery, display, camera, Android version, security patch, serial numbers, and notable hardware features, with the ADB source shown for every field.
 - Device information can be copied as a complete summary, copied one field at a time by double-clicking, or exported as UTF-8 text, an Excel `.xlsx` workbook, or JSON. Excel export does not require Microsoft Excel to be installed. Specifications not exposed by Android are identified as unavailable instead of being guessed.
 - Device information is cached locally per device after a successful read. Reconnecting the same phone or switching among multiple phones restores the matching cache automatically, with actions to force a refresh or clear only the current phone's cache.
+- The built-in **Ahui Tools** group checks, downloads, and installs the latest public GitHub Release APKs for TestTools Android, PowerTesting Web, and PowerTesting Monitor. Running the action again performs an online update check.
 - Creates multiple reusable APK/XAPK groups and installs every package sequentially with per-file status reporting.
 - Supports regular APKs and XAPK bundles. XAPK installation handles base and split APKs together and transfers bundled `Android/obb` data to the correct device location.
 - Hover over an install-list item to view its complete file name and full path when columns are truncated.
 - Reorders groups by drag and drop; custom groups can be renamed by double-clicking, and the order is saved automatically.
+- APK/XAPK items inside a custom group can also be reordered by dragging. Right-click an item to install it immediately or remove it from the list.
 - Scans subfolders under the local `APKs` directory and exposes them as protected, folder-synchronized groups.
+- Folder-synchronized groups remain read-only, but each item can still be installed individually from its context menu; inapplicable remove actions are hidden.
+- **Common App Installation** and **Quick Transfer Installation** perform a fresh device check before an install or transfer. If the phone is not ready, a cancellable dialog waits for the connection and debugging authorization, then resumes the original operation automatically.
+- If Windows reserves or blocks ADB''s default TCP port 5037, the app automatically selects another available port and uses it consistently for every ADB action. The interface reports the active port and a clearer startup failure reason.
 - The split **Quick Install / Transfer** page installs dropped APK or XAPK files on the left. On the right, choose `Download`, `DCIM`, `Pictures`, or the shared-storage root before dropping files or folders; directory structure is preserved.
 - Reads and adjusts device brightness using a slider, numeric input, or the `+` / `-` keys.
 - Adds automatic brightness adjustment using measured luminance with ArgyllCMS `spotread` and an external colorimeter. A closed loop repeatedly measures and adjusts Android brightness while the original manual controls remain available.
 - Controls auto brightness, 10-minute screen timeout, maximum timeout, and stay-awake-while-charging independently.
 - Applies and verifies each quick setting separately, so one failure does not stop the remaining settings.
-- Sets media volume to minimum or maximum and opens a URL on the phone. Phone screenshots can be saved as PNG files or copied directly to the Windows clipboard.
+- Sets media volume to minimum, 50%, or maximum. The 50% action derives the midpoint from the phone's actual volume range and verifies the resulting level. The app can also open a URL on the phone, save screenshots as PNG files, or copy them directly to the Windows clipboard.
 - Downloads files from `DCIM`, `Pictures`, and `Picture` either as a ZIP archive or directly into their original folder structure.
 - Folder mode can track the last complete download separately for each phone, transfer only new or modified files, and reset the checkpoint on demand.
 - Android `.thumbnails` cache folders are ignored during scanning and transfer and are not counted as errors or download results.
@@ -104,9 +110,9 @@ Use the latest version from the official page. Google states that current Platfo
 
 Each GitHub Release provides portable packages alongside a complete installer:
 
-- `AndroidADBTools-v2.0.7.zip`: the standard portable package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
-- `AndroidADBTools-v2.0.7-complete.zip`: the Complete portable package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
-- `AndroidADBTools-v2.0.7-complete-setup.exe`: the complete installer containing the same bundled tools as the Complete portable package. It installs into Program Files and provides Start menu shortcuts, an optional desktop shortcut, and uninstallation support.
+- `AndroidADBTools-v2.0.8.zip`: the standard portable package containing AndroidADBTools only, intended for users who already have Android Platform-Tools or prefer to manage tool versions themselves.
+- `AndroidADBTools-v2.0.8-complete.zip`: the Complete portable package, additionally containing Android ADB 37.0.0 and ArgyllCMS 3.5.0 `spotread.exe`. Both tools are detected automatically after extraction.
+- `AndroidADBTools-v2.0.8-complete-setup.exe`: the complete installer containing the same bundled tools as the Complete portable package. It installs into Program Files and provides Start menu shortcuts, an optional desktop shortcut, and uninstallation support.
 
 1. Choose the package you need from [Releases](https://github.com/ahui3c/AndroidADBTools/releases). Fully extract a portable ZIP, or run Setup and accept the Windows UAC prompt for the installer.
 2. Run `AndroidADBTools.exe` from a portable folder, or launch the installed app from the Start menu.
@@ -116,6 +122,10 @@ Each GitHub Release provides portable packages alongside a complete installer:
 The app searches the saved ADB path, its own folder, `ADBtools\adb.exe`, `platform-tools\adb.exe`, the default Android SDK location, and the system `PATH`. If `spotread.exe` has not been selected, it also detects the Complete package's bundled `Argyll\bin\spotread.exe` and fills in the setting automatically.
 
 ## APK/XAPK Installation and Folder-Synchronized Groups
+
+**Ahui Tools** stays at the top of the Common App Installation list and uses the latest public Releases from [TestTools Android](https://github.com/ahui3c/TestTools_Android), [PowerTesting Web](https://github.com/ahui3c/powertesting-web-Android), and [PowerTesting Monitor](https://github.com/ahui3c/powertesting-monitor-Android). Each row includes a concise Traditional Chinese purpose description. Downloading and installation are separate actions: **Download / update selected** only checks GitHub, caches the APK under `%LocalAppData%\AndroidADBTools\ahui-tools`, and verifies its size and SHA-256; **Install selected** and **Install downloaded version** only pass an existing local APK to ADB and never start a download. The per-user cache avoids UAC requirements even when the application itself is installed under Program Files.
+
+Before installation, the app performs a fresh ADB connection check. If the phone is disconnected, offline, or awaiting USB debugging authorization, a dialog rechecks every two seconds and starts the installation automatically when ready. **Cancel this operation** stops only the pending action. Downloading or updating an APK does not require a connected phone.
 
 Create folders next to the application using this structure:
 
@@ -147,6 +157,7 @@ An XAPK is treated as an archive containing one or more APKs. The app validates 
 ## Quick Transfer to the Device
 
 - Open **Quick Install / Transfer** and drop files or folders on the right-hand transfer area.
+- After files are dropped, the app performs a fresh device check. It can wait and resume automatically when the phone becomes ready, or cancel the pending transfer.
 - Select the device destination first. The default is `/sdcard/Download/`; `/sdcard/DCIM/`, `/sdcard/Pictures/`, and the shared-storage root `/sdcard/` are also available.
 - Dropped items are immediately sent to the selected destination.
 - Dropped folders retain their top-level folder name and complete subdirectory structure.
@@ -154,13 +165,14 @@ An XAPK is treated as an archive containing one or more APKs. The app validates 
 
 ## Automatic Brightness Adjustment Using Measured Luminance
 
-The upper part of the **Brightness** page retains all manual controls. The lower part adds closed-loop calibration with an external colorimeter:
+The **Brightness** page places automatic calibration at the top and manual brightness controls below:
 
 1. The Complete package includes ArgyllCMS 3.5.0 `spotread.exe`. With the standard package, download the Windows build from the [official ArgyllCMS website](https://www.argyllcms.com/) and select `bin\spotread.exe` in the application.
 2. Connect the phone and an ArgyllCMS-compatible display measurement instrument, then place its sensor flat against the center of the display.
 3. Open the white test image on the phone and make sure it is truly full-screen, with no viewer controls or notifications covering it.
 4. Run **Device test** first. Once an absolute emissive Y reading is available, enter the target (for example, 200 nit) and tolerance, then start automatic adjustment.
-5. The app disables Android auto brightness and repeatedly changes brightness, waits for stabilization, and runs `spotread -e -O`. It keeps the Android value whose measured luminance is closest to the target.
+5. The app first disables Android auto brightness and verifies the setting before changing brightness, waiting for stabilization, and running `spotread -e -O`.
+6. After successful calibration, save the result for the identified phone. The target, measured nit, Android brightness value, and timestamp are retained. Reconnect the same phone to apply its last saved result without measuring again; the displayed nit is the historical measurement. Each phone has its own record.
 
 An optional `.ccss` or `.ccmx` display correction can reduce meter/display spectral mismatch, especially with OLED panels. This feature controls measured white luminance only; it is not a complete color/ICC calibration and cannot enable HDR or OEM high-brightness modes. If the target is outside the phone's current range, the closest measured result is retained and reported.
 

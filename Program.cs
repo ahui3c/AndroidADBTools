@@ -34,8 +34,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("AndroidADBTools")]
 [assembly: AssemblyProduct("Android ADB 快速工具")]
 [assembly: AssemblyCopyright("Copyright © 2026 廖阿輝")]
-[assembly: AssemblyVersion("2.0.7.0")]
-[assembly: AssemblyFileVersion("2.0.7.0")]
+[assembly: AssemblyVersion("2.0.8.0")]
+[assembly: AssemblyFileVersion("2.0.8.0")]
 [assembly: TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName = ".NET Framework 4.8")]
 
 namespace AndroidADBTools
@@ -180,6 +180,35 @@ namespace AndroidADBTools
         }
     }
 
+    public sealed class CuratedToolDefinition
+    {
+        public string DisplayName { get; private set; }
+        public string Repository { get; private set; }
+        public string Description { get; private set; }
+
+        public CuratedToolDefinition(string displayName, string repository, string description)
+        {
+            DisplayName = displayName ?? "";
+            Repository = repository ?? "";
+            Description = description ?? "";
+        }
+    }
+
+    public sealed class CuratedToolCacheInfo
+    {
+        public string repository { get; set; }
+        public string tag_name { get; set; }
+        public string asset_name { get; set; }
+        public DateTime downloaded_at { get; set; }
+
+        public CuratedToolCacheInfo()
+        {
+            repository = "";
+            tag_name = "";
+            asset_name = "";
+        }
+    }
+
     public sealed class AppSettings
     {
         public string AdbPath { get; set; }
@@ -187,6 +216,8 @@ namespace AndroidADBTools
         public List<ApkGroup> Groups { get; set; }
         public List<string> GroupOrder { get; set; }
         public string SelectedGroupId { get; set; }
+        public string SelectedModule { get; set; }
+        public bool? HideNonRemovableApps { get; set; }
         public int WindowWidth { get; set; }
         public int WindowHeight { get; set; }
         public bool WindowMaximized { get; set; }
@@ -204,6 +235,7 @@ namespace AndroidADBTools
         public string SpotreadCorrectionPath { get; set; }
         public decimal AutoBrightnessTargetNit { get; set; }
         public decimal AutoBrightnessToleranceNit { get; set; }
+        public List<BrightnessCalibrationRecord> BrightnessCalibrations { get; set; }
 
         public AppSettings()
         {
@@ -211,6 +243,8 @@ namespace AndroidADBTools
             Groups = new List<ApkGroup>();
             GroupOrder = new List<string>();
             SelectedGroupId = "";
+            SelectedModule = "common-apps";
+            HideNonRemovableApps = true;
             DownloadFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Android手機資料下載");
             SkipLargeDownloadFiles = true;
             MaxDownloadFileSizeGb = 2M;
@@ -223,6 +257,7 @@ namespace AndroidADBTools
             SpotreadCorrectionPath = "";
             AutoBrightnessTargetNit = 200M;
             AutoBrightnessToleranceNit = 2M;
+            BrightnessCalibrations = new List<BrightnessCalibrationRecord>();
         }
     }
 
@@ -288,12 +323,27 @@ namespace AndroidADBTools
         public ApkEntry(string path) { Path = path; }
     }
 
+    public sealed class ApkListDragData
+    {
+        public string GroupId { get; private set; }
+        public int SourceIndex { get; private set; }
+
+        public ApkListDragData(string groupId, int sourceIndex)
+        {
+            GroupId = groupId ?? "";
+            SourceIndex = sourceIndex;
+        }
+    }
+
     public sealed class AdbResult
     {
         public int ExitCode { get; set; }
         public string Output { get; set; }
         public string Error { get; set; }
         public bool Started { get; set; }
+        public int ServerPort { get; set; }
+        public bool UsedFallbackPort { get; set; }
+        public string PortNotice { get; set; }
     }
 
     public sealed class DeviceInfo
@@ -468,6 +518,26 @@ namespace AndroidADBTools
         public string Model { get; set; }
     }
 
+    public sealed class BrightnessCalibrationRecord
+    {
+        public string DeviceKey { get; set; }
+        public string DeviceSerial { get; set; }
+        public string DeviceModel { get; set; }
+        public int BrightnessValue { get; set; }
+        public int BrightnessMaximum { get; set; }
+        public decimal TargetNit { get; set; }
+        public decimal MeasuredNit { get; set; }
+        public DateTime SavedAt { get; set; }
+
+        public BrightnessCalibrationRecord()
+        {
+            DeviceKey = "";
+            DeviceSerial = "";
+            DeviceModel = "";
+            SavedAt = DateTime.Now;
+        }
+    }
+
     public sealed class ModernTabControl : TabControl
     {
         public ModernTabControl()
@@ -573,6 +643,17 @@ namespace AndroidADBTools
         private AppSettings settings;
         private readonly string settingsFile;
         private readonly string deviceInformationCacheFolder;
+        private readonly string curatedToolsCacheFolder;
+        private const string CuratedToolsGroupId = "builtin:ahui-tools";
+        private readonly List<CuratedToolDefinition> curatedTools = new List<CuratedToolDefinition>
+        {
+            new CuratedToolDefinition("TestTools Android", "TestTools_Android",
+                "手機測試工具箱：整合測試連結、亮度測試、快速截圖、影音備份與手機資訊。"),
+            new CuratedToolDefinition("PowerTesting Web", "powertesting-web-Android",
+                "自動模擬網頁瀏覽，依照設定時間記錄手機電量消耗。"),
+            new CuratedToolDefinition("PowerTesting Monitor", "powertesting-monitor-Android",
+                "以浮動視窗監控各種測試情境耗電，保存電量變化與測試紀錄。")
+        };
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private bool busy;
         private bool quickInstalling;
@@ -580,6 +661,9 @@ namespace AndroidADBTools
         private bool quickInstallDragOver;
         private bool quickTransferDragOver;
         private string quickTransferStatus = "";
+        private readonly object adbPortSync = new object();
+        private AdbPortSelection adbPortSelection;
+        private bool adbPortNoticeLogged;
 
         private Label adbStatusLabel;
         private Label deviceStatusLabel;
@@ -612,6 +696,7 @@ namespace AndroidADBTools
         private Button applyQuickSettingsButton;
         private Button readQuickSettingsButton;
         private Button volumeMinimumButton;
+        private Button volumeHalfButton;
         private Button volumeMaximumButton;
         private Button openUrlButton;
         private Button screenshotButton;
@@ -657,18 +742,43 @@ namespace AndroidADBTools
         private Label autoBrightnessStatusLabel;
         private Label autoBrightnessReadingLabel;
         private ProgressBar autoBrightnessProgressBar;
+        private Label savedBrightnessCalibrationLabel;
+        private Button saveBrightnessCalibrationButton;
+        private Button applySavedBrightnessCalibrationButton;
+        private BrightnessCalibrationRecord pendingBrightnessCalibration;
+        private BrightnessCalibrationRecord currentBrightnessCalibration;
         private bool autoBrightnessRunning;
         private bool autoBrightnessCancelRequested;
         private ToolTip groupNameToolTip;
         private int lastGroupTooltipIndex = -1;
         private ToolTip apkListToolTip;
         private int lastApkTooltipIndex = -1;
+        private ContextMenuStrip apkListContextMenu;
+        private ToolStripMenuItem installSelectedApkMenuItem;
+        private ToolStripMenuItem downloadSelectedCuratedToolMenuItem;
+        private ToolStripMenuItem removeSelectedApkMenuItem;
         private int groupDragStartIndex = -1;
         private int groupDragInsertIndex = -1;
         private int groupDragLastScrollTick;
         private Point groupDragStartPoint;
         private ModernTabControl mainTabs;
         private TabPage brightnessTabPage;
+        private TextBox installedAppSearchTextBox;
+        private ListView installedAppsListView;
+        private Label installedAppsStatusLabel;
+        private Label installedAppsSelectionLabel;
+        private Button scanInstalledAppsButton;
+        private Button checkAllInstalledAppsButton;
+        private Button clearInstalledAppChecksButton;
+        private Button uninstallInstalledAppsButton;
+        private CheckBox hideNonRemovableAppsCheckBox;
+        private readonly List<InstalledAppInfo> installedApps = new List<InstalledAppInfo>();
+        private readonly HashSet<string> checkedInstalledPackages =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool updatingInstalledAppList;
+        private string installedAppsDeviceSerial = "";
+        private int installedAppsSortColumn;
+        private bool installedAppsSortAscending = true;
         private ListView deviceInformationList;
         private Label deviceInformationStatusLabel;
         private Button readDeviceInformationButton;
@@ -688,6 +798,7 @@ namespace AndroidADBTools
             CleanupOldUpdateDownloads(Path.Combine(folder, "updates"));
             settingsFile = Path.Combine(folder, "settings.json");
             deviceInformationCacheFolder = Path.Combine(folder, "device-information-cache");
+            curatedToolsCacheFolder = Path.Combine(folder, "ahui-tools");
             settings = LoadSettings();
 
             Text = "Android ADB 快速工具";
@@ -764,7 +875,7 @@ namespace AndroidADBTools
             };
             Label subtitle = new Label
             {
-                Text = "連線確認、常用 APK／XAPK 安裝與快速安裝",
+                Text = "連線確認、程式安裝管理與快速傳輸",
                 ForeColor = Muted,
                 AutoSize = true,
                 Location = new Point(12, 42)
@@ -922,16 +1033,26 @@ namespace AndroidADBTools
             mainTabs.Font = new Font(Font.FontFamily, 10.5F, FontStyle.Bold);
             mainTabs.BackColor = Bg;
             mainTabs.ItemSize = new Size(58, 154);
-            TabPage groupsTab = NewTab("▦  常用 APK／XAPK", Color.FromArgb(53, 120, 219));
-            TabPage singleTab = NewTab("⇩  快速安裝 / 傳輸", Color.FromArgb(126, 87, 194));
+            TabPage groupsTab = NewTab("▦  常用程式安裝", Color.FromArgb(53, 120, 219));
+            TabPage singleTab = NewTab("⇩  快速傳輸安裝", Color.FromArgb(126, 87, 194));
+            TabPage appManagementTab = NewTab("▣  程式管理", Color.FromArgb(47, 126, 166));
             TabPage brightnessTab = NewTab("☀  亮度調整", Color.FromArgb(211, 132, 42));
             brightnessTabPage = brightnessTab;
             TabPage quickSettingsTab = NewTab("⚙  快速設定", Color.FromArgb(32, 151, 116));
             TabPage deviceInformationTab = NewTab("ⓘ  手機資訊", Color.FromArgb(38, 158, 142));
             TabPage downloadTab = NewTab("↓  資料下載", Color.FromArgb(35, 156, 181));
             TabPage logTab = NewTab("≡  執行紀錄", Color.FromArgb(88, 103, 128));
+            groupsTab.Name = "common-apps";
+            singleTab.Name = "quick-transfer";
+            appManagementTab.Name = "app-management";
+            brightnessTab.Name = "brightness";
+            quickSettingsTab.Name = "quick-settings";
+            deviceInformationTab.Name = "device-information";
+            downloadTab.Name = "data-download";
+            logTab.Name = "execution-log";
             mainTabs.TabPages.Add(groupsTab);
             mainTabs.TabPages.Add(singleTab);
+            mainTabs.TabPages.Add(appManagementTab);
             mainTabs.TabPages.Add(brightnessTab);
             mainTabs.TabPages.Add(quickSettingsTab);
             mainTabs.TabPages.Add(deviceInformationTab);
@@ -941,11 +1062,45 @@ namespace AndroidADBTools
 
             BuildGroupsTab(groupsTab);
             BuildSingleTab(singleTab);
+            BuildAppManagementTab(appManagementTab);
             BuildBrightnessTab(brightnessTab);
             BuildQuickSettingsTab(quickSettingsTab);
             BuildDeviceInformationTab(deviceInformationTab);
             BuildDownloadTab(downloadTab);
             BuildLogTab(logTab);
+
+            RestoreSelectedModule();
+            mainTabs.SelectedIndexChanged += MainModuleChanged;
+        }
+
+        private void RestoreSelectedModule()
+        {
+            if (mainTabs == null || mainTabs.TabPages.Count == 0) return;
+
+            TabPage selected = mainTabs.TabPages.Cast<TabPage>().FirstOrDefault(delegate(TabPage tab)
+            {
+                return String.Equals(tab.Name, settings.SelectedModule, StringComparison.OrdinalIgnoreCase);
+            });
+
+            if (selected == null)
+            {
+                selected = mainTabs.TabPages[0];
+                settings.SelectedModule = selected.Name;
+            }
+
+            mainTabs.SelectedTab = selected;
+        }
+
+        private void MainModuleChanged(object sender, EventArgs e)
+        {
+            if (mainTabs == null || mainTabs.SelectedTab == null ||
+                String.IsNullOrWhiteSpace(mainTabs.SelectedTab.Name)) return;
+
+            string selectedModule = mainTabs.SelectedTab.Name;
+            if (String.Equals(settings.SelectedModule, selectedModule, StringComparison.OrdinalIgnoreCase)) return;
+
+            settings.SelectedModule = selectedModule;
+            SaveSettings();
         }
 
         private void ApplyLightControlTheme(Control parent)
@@ -1084,10 +1239,17 @@ namespace AndroidADBTools
                 BackColor = Card,
                 WrapContents = false
             };
-            addGroupApksButton = NewButton("加入套件", false, 105);
+            // Reserve enough width for the longer curated-tools label at every DPI.
+            addGroupApksButton = NewButton("加入套件", false, 180);
             removeGroupApkButton = NewButton("移除選取", false, 105);
             installGroupButton = NewButton("全部安裝", true, 120);
-            addGroupApksButton.Click += AddApksToGroup;
+            addGroupApksButton.Click += async delegate
+            {
+                if (IsCuratedToolsGroup(SelectedGroup()))
+                    await DownloadOrUpdateCuratedToolsAsync(false);
+                else
+                    AddApksToGroup(addGroupApksButton, EventArgs.Empty);
+            };
             removeGroupApkButton.Click += RemoveSelectedApks;
             installGroupButton.Click += async delegate { await InstallSelectedGroupAsync(); };
             downgradeCheck = new CheckBox
@@ -1118,8 +1280,34 @@ namespace AndroidADBTools
                 lastApkTooltipIndex = -1;
                 apkListToolTip.Hide(apkList);
             };
+            apkList.MouseDown += ApkListMouseDown;
+            apkList.ItemDrag += ApkListItemDrag;
             apkList.DragEnter += GroupApkDragEnter;
+            apkList.DragOver += GroupApkDragOver;
+            apkList.DragLeave += delegate { ClearApkListInsertionMark(); };
             apkList.DragDrop += GroupApkDragDrop;
+            apkListContextMenu = new ContextMenuStrip
+            {
+                BackColor = Color.White,
+                ForeColor = TextColor,
+                Font = new Font(Font.FontFamily, 10F),
+                ShowImageMargin = false
+            };
+            installSelectedApkMenuItem = new ToolStripMenuItem("快速安裝");
+            downloadSelectedCuratedToolMenuItem = new ToolStripMenuItem("下載／更新最新版");
+            removeSelectedApkMenuItem = new ToolStripMenuItem("從清單移除");
+            installSelectedApkMenuItem.Click += async delegate { await InstallSelectedApkItemsAsync(); };
+            downloadSelectedCuratedToolMenuItem.Click += async delegate
+            {
+                await DownloadOrUpdateCuratedToolsAsync(false);
+            };
+            removeSelectedApkMenuItem.Click += RemoveSelectedApks;
+            apkListContextMenu.Items.Add(installSelectedApkMenuItem);
+            apkListContextMenu.Items.Add(downloadSelectedCuratedToolMenuItem);
+            apkListContextMenu.Items.Add(new ToolStripSeparator());
+            apkListContextMenu.Items.Add(removeSelectedApkMenuItem);
+            apkListContextMenu.Opening += ApkListContextMenuOpening;
+            apkList.ContextMenuStrip = apkListContextMenu;
             right.Controls.Add(apkList);
             apkList.BringToFront();
         }
@@ -1253,7 +1441,7 @@ namespace AndroidADBTools
         {
             Panel outer = NewCard();
             outer.Dock = DockStyle.Fill;
-            outer.Padding = new Padding(16);
+            outer.Padding = new Padding(18);
             tab.Controls.Add(outer);
 
             Label title = new Label
@@ -1262,36 +1450,96 @@ namespace AndroidADBTools
                 ForeColor = TextColor,
                 Font = new Font(Font.FontFamily, 17F, FontStyle.Bold),
                 Dock = DockStyle.Top,
-                Height = 34
+                Height = 36
             };
             Label hint = new Label
             {
-                Text = "上方保留手動調整；下方可搭配 ArgyllCMS 相容感測器，自動調整設備亮度。",
+                Text = "直接設定 Android 亮度，或搭配 ArgyllCMS 相容感測器進行實測校正。",
                 ForeColor = Muted,
                 Dock = DockStyle.Top,
-                Height = 32
+                Height = 34
             };
-            outer.Controls.Add(hint);
-            outer.Controls.Add(title);
+            TableLayoutPanel pageLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                BackColor = Card,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            pageLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pageLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            pageLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            pageLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            pageLayout.Controls.Add(title, 0, 0);
+            pageLayout.Controls.Add(hint, 0, 1);
+            outer.Controls.Add(pageLayout);
 
             Panel brightnessViewport = new Panel
             {
                 Dock = DockStyle.Fill,
                 AutoScroll = true,
                 BackColor = Card,
-                Margin = new Padding(0)
+                Margin = new Padding(0),
+                Padding = new Padding(0, 6, 0, 0)
             };
             brightnessViewport.HandleCreated += delegate { SetWindowTheme(brightnessViewport.Handle, "Explorer", null); };
-            outer.Controls.Add(brightnessViewport);
+            pageLayout.Controls.Add(brightnessViewport, 0, 2);
 
-            Panel controlCard = new Panel
+            TableLayoutPanel brightnessStack = new TableLayoutPanel
             {
                 Dock = DockStyle.Top,
-                Height = 228,
-                BackColor = Card2,
-                Padding = new Padding(14)
+                Height = 666,
+                ColumnCount = 1,
+                RowCount = 3,
+                BackColor = Card,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
             };
-            brightnessViewport.Controls.Add(controlCard);
+            brightnessStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            brightnessStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 436));
+            brightnessStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 12));
+            brightnessStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 218));
+            brightnessViewport.Controls.Add(brightnessStack);
+
+            Color manualCardColor = Color.FromArgb(243, 247, 249);
+            Panel controlCard = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = manualCardColor,
+                Padding = new Padding(16),
+                Margin = new Padding(0)
+            };
+            TableLayoutPanel manualLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 4,
+                BackColor = manualCardColor,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+            manualLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            manualLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+            manualLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 126));
+            manualLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            manualLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            manualLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            manualLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            controlCard.Controls.Add(manualLayout);
+            brightnessStack.Controls.Add(controlCard, 0, 2);
+
+            Label manualTitle = new Label
+            {
+                Text = "手動調整亮度",
+                ForeColor = TextColor,
+                Font = new Font(Font.FontFamily, 13.5F, FontStyle.Bold),
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            manualLayout.Controls.Add(manualTitle, 0, 0);
+            manualLayout.SetColumnSpan(manualTitle, 3);
 
             brightnessValueLabel = new Label
             {
@@ -1313,57 +1561,61 @@ namespace AndroidADBTools
                 SmallChange = 1,
                 LargeChange = 10,
                 Value = 128,
-                Dock = DockStyle.Top,
-                Height = 42,
-                BackColor = Card2
+                Dock = DockStyle.Fill,
+                BackColor = manualCardColor,
+                Margin = new Padding(0)
             };
             brightnessTrackBar.ValueChanged += BrightnessTrackBarChanged;
-            controlCard.Controls.Add(brightnessTrackBar);
-            brightnessTrackBar.BringToFront();
+            manualLayout.Controls.Add(brightnessTrackBar, 0, 2);
+            manualLayout.SetColumnSpan(brightnessTrackBar, 3);
 
             FlowLayoutPanel valueControls = new FlowLayoutPanel
             {
-                Dock = DockStyle.Top,
-                Height = 56,
+                Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.LeftToRight,
                 WrapContents = false,
-                BackColor = Card2,
-                Padding = new Padding(0, 12, 0, 0)
+                BackColor = manualCardColor,
+                Padding = new Padding(0, 6, 0, 0),
+                Margin = new Padding(0)
             };
-            Button minusButton = NewButton("−", false, 58);
+            Button minusButton = NewButton("−", false, 64);
             minusButton.Font = new Font(Font.FontFamily, 16F, FontStyle.Bold);
+            minusButton.Height = 44;
+            minusButton.Margin = new Padding(0, 0, 8, 0);
             minusButton.Click += delegate { ChangeBrightnessBy(-BrightnessStep()); };
             brightnessNumber = new NumericUpDown
             {
                 Minimum = 0,
                 Maximum = 255,
                 Value = 128,
-                Width = 150,
-                Height = 38,
+                Width = 168,
+                Height = 44,
                 Font = new Font(Font.FontFamily, 14F, FontStyle.Bold),
                 TextAlign = HorizontalAlignment.Center,
                 BackColor = Color.White,
                 ForeColor = TextColor,
                 BorderStyle = BorderStyle.FixedSingle,
-                Margin = new Padding(8, 4, 8, 4)
+                Margin = new Padding(0, 0, 8, 0)
             };
             brightnessNumber.ValueChanged += BrightnessNumberChanged;
-            Button plusButton = NewButton("＋", false, 58);
+            Button plusButton = NewButton("＋", false, 64);
             plusButton.Font = new Font(Font.FontFamily, 16F, FontStyle.Bold);
+            plusButton.Height = 44;
+            plusButton.Margin = new Padding(0, 0, 10, 0);
             plusButton.Click += delegate { ChangeBrightnessBy(BrightnessStep()); };
             brightnessRangeLabel = new Label
             {
                 Text = "目前範圍 0–255，每次按鍵調整 1",
                 ForeColor = Muted,
                 AutoSize = true,
-                Padding = new Padding(14, 12, 0, 0)
+                Padding = new Padding(8, 11, 0, 0)
             };
             valueControls.Controls.Add(minusButton);
             valueControls.Controls.Add(brightnessNumber);
             valueControls.Controls.Add(plusButton);
             valueControls.Controls.Add(brightnessRangeLabel);
-            controlCard.Controls.Add(valueControls);
-            valueControls.BringToFront();
+            manualLayout.Controls.Add(valueControls, 0, 1);
+            manualLayout.SetColumnSpan(valueControls, 3);
 
             brightnessDisableAutoCheck = new CheckBox
             {
@@ -1372,49 +1624,54 @@ namespace AndroidADBTools
                 ForeColor = TextColor,
                 AutoSize = true,
                 Dock = DockStyle.Top,
-                Padding = new Padding(4, 6, 0, 0)
+                Height = 25,
+                Padding = new Padding(2, 2, 0, 0)
             };
-            controlCard.Controls.Add(brightnessDisableAutoCheck);
-            brightnessDisableAutoCheck.BringToFront();
 
             brightnessStatusLabel = new Label
             {
                 Text = "尚未讀取設備亮度",
                 ForeColor = Muted,
-                Dock = DockStyle.Top,
-                Height = 28,
-                Padding = new Padding(4, 4, 0, 0)
+                Dock = DockStyle.Fill,
+                Padding = new Padding(3, 27, 8, 0),
+                AutoEllipsis = true
             };
-            controlCard.Controls.Add(brightnessStatusLabel);
-            brightnessStatusLabel.BringToFront();
-
-            FlowLayoutPanel actions = new FlowLayoutPanel
+            TableLayoutPanel manualState = new TableLayoutPanel
             {
-                Dock = DockStyle.Top,
-                Height = 48,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                BackColor = Card2,
-                Padding = new Padding(0, 4, 0, 0)
+                Dock = DockStyle.Fill,
+                BackColor = manualCardColor,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                ColumnCount = 1,
+                RowCount = 2
             };
+            manualState.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            manualState.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+            manualState.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            brightnessStatusLabel.Padding = new Padding(3, 2, 8, 0);
+            manualState.Controls.Add(brightnessDisableAutoCheck, 0, 0);
+            manualState.Controls.Add(brightnessStatusLabel, 0, 1);
+            manualLayout.Controls.Add(manualState, 0, 3);
+
             readBrightnessButton = NewButton("讀取目前亮度", false, 142);
+            readBrightnessButton.Dock = DockStyle.Fill;
+            readBrightnessButton.Margin = new Padding(5, 5, 5, 1);
             readBrightnessButton.Click += async delegate { await ReadBrightnessAsync(); };
             applyBrightnessButton = NewButton("立即套用", true, 112);
+            applyBrightnessButton.Dock = DockStyle.Fill;
+            applyBrightnessButton.Margin = new Padding(5, 5, 0, 1);
             applyBrightnessButton.Click += async delegate
             {
                 brightnessUpdateTimer.Stop();
                 brightnessPendingValue = (int)brightnessNumber.Value;
                 await ApplyBrightnessAsync();
             };
-            actions.Controls.Add(readBrightnessButton);
-            actions.Controls.Add(applyBrightnessButton);
-            controlCard.Controls.Add(actions);
-            actions.BringToFront();
+            manualLayout.Controls.Add(readBrightnessButton, 1, 3);
+            manualLayout.Controls.Add(applyBrightnessButton, 2, 3);
 
             Panel autoCard = BuildAutoBrightnessCard();
-            brightnessViewport.Controls.Add(autoCard);
-            autoCard.BringToFront();
-            brightnessViewport.AutoScrollMinSize = new Size(0, controlCard.Height + autoCard.Height + 18);
+            brightnessStack.Controls.Add(autoCard, 0, 0);
+            brightnessViewport.AutoScrollMinSize = new Size(0, brightnessStack.Height + 6);
 
             brightnessUpdateTimer = new Timer();
             brightnessUpdateTimer.Interval = 180;
@@ -1429,32 +1686,32 @@ namespace AndroidADBTools
         {
             Panel card = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 388,
+                Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(237, 246, 244),
                 Padding = new Padding(16),
-                Margin = new Padding(0, 12, 0, 0)
+                Margin = new Padding(0)
             };
             TableLayoutPanel layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 4,
-                RowCount = 8,
+                RowCount = 9,
                 BackColor = card.BackColor,
                 Margin = new Padding(0),
                 Padding = new Padding(0)
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             Label title = new Label
@@ -1466,7 +1723,11 @@ namespace AndroidADBTools
                 TextAlign = ContentAlignment.MiddleLeft
             };
             layout.Controls.Add(title, 0, 0);
-            layout.SetColumnSpan(title, 4);
+            layout.SetColumnSpan(title, 3);
+            Button compatibleMetersButton = NewButton("相容量測設備", false, 190);
+            compatibleMetersButton.Dock = DockStyle.Fill;
+            compatibleMetersButton.Margin = new Padding(5, 0, 0, 2);
+            layout.Controls.Add(compatibleMetersButton, 3, 0);
             Label note = new Label
             {
                 Text = "搭配支援 ArgyllCMS 驅動的感測器，將之緊貼全白畫面的設備螢幕中央。程式會自動調節與接收設備螢幕亮度數值，直到接近設定目標值。",
@@ -1475,11 +1736,7 @@ namespace AndroidADBTools
                 AutoEllipsis = true
             };
             layout.Controls.Add(note, 0, 1);
-            layout.SetColumnSpan(note, 3);
-            Button compatibleMetersButton = NewButton("相容量測設備", false, 124);
-            compatibleMetersButton.Dock = DockStyle.Fill;
-            compatibleMetersButton.Margin = new Padding(5, 3, 0, 3);
-            layout.Controls.Add(compatibleMetersButton, 3, 1);
+            layout.SetColumnSpan(note, 4);
 
             spotreadPathTextBox = BrightnessToolTextBox(settings.SpotreadPath);
             browseSpotreadButton = NewButton("選擇執行檔", false, 124);
@@ -1521,8 +1778,42 @@ namespace AndroidADBTools
             layout.Controls.Add(actions, 0, 5);
             layout.SetColumnSpan(actions, 4);
 
+            savedBrightnessCalibrationLabel = new Label
+            {
+                Text = "目前手機尚無已儲存的亮度校正結果。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Padding = new Padding(0, 0, 8, 0)
+            };
+            saveBrightnessCalibrationButton = NewButton("儲存本次結果", false, 135);
+            saveBrightnessCalibrationButton.Dock = DockStyle.Fill;
+            saveBrightnessCalibrationButton.Margin = new Padding(5, 5, 5, 5);
+            ConfigureBrightnessResultButton(saveBrightnessCalibrationButton, false);
+            saveBrightnessCalibrationButton.Enabled = false;
+            applySavedBrightnessCalibrationButton = NewButton("快速套用已存結果", false, 200);
+            applySavedBrightnessCalibrationButton.Dock = DockStyle.Fill;
+            applySavedBrightnessCalibrationButton.Margin = new Padding(5, 5, 0, 5);
+            applySavedBrightnessCalibrationButton.AutoEllipsis = true;
+            applySavedBrightnessCalibrationButton.UseCompatibleTextRendering = false;
+            ConfigureBrightnessResultButton(applySavedBrightnessCalibrationButton, true);
+            applySavedBrightnessCalibrationButton.Enabled = false;
+            Panel savedResultPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(229, 240, 246),
+                Margin = new Padding(0, 4, 5, 4),
+                Padding = new Padding(10, 0, 6, 0)
+            };
+            savedResultPanel.Controls.Add(savedBrightnessCalibrationLabel);
+            layout.Controls.Add(savedResultPanel, 0, 6);
+            layout.SetColumnSpan(savedResultPanel, 2);
+            layout.Controls.Add(saveBrightnessCalibrationButton, 2, 6);
+            layout.Controls.Add(applySavedBrightnessCalibrationButton, 3, 6);
+
             autoBrightnessProgressBar = new ProgressBar { Dock = DockStyle.Fill, Minimum = 0, Maximum = 18, Value = 0, Style = ProgressBarStyle.Continuous, Margin = new Padding(0, 7, 0, 7) };
-            layout.Controls.Add(autoBrightnessProgressBar, 0, 6);
+            layout.Controls.Add(autoBrightnessProgressBar, 0, 7);
             layout.SetColumnSpan(autoBrightnessProgressBar, 4);
             autoBrightnessReadingLabel = new Label { Text = "尚未量測", ForeColor = Muted, Dock = DockStyle.Top, Height = 24, AutoEllipsis = true };
             autoBrightnessStatusLabel = new Label { Text = "請先選擇 ArgyllCMS bin 資料夾中的 spotread.exe，並按「設備測試」確認儀器。", ForeColor = Muted, Dock = DockStyle.Fill, AutoEllipsis = true };
@@ -1532,7 +1823,7 @@ namespace AndroidADBTools
             autoBrightnessReadingLabel.BringToFront();
             autoBrightnessStatusLabel.Dock = DockStyle.Fill;
             autoBrightnessStatusLabel.Padding = new Padding(0, 24, 0, 0);
-            layout.Controls.Add(statePanel, 0, 7);
+            layout.Controls.Add(statePanel, 0, 8);
             layout.SetColumnSpan(statePanel, 4);
             card.Controls.Add(layout);
 
@@ -1551,6 +1842,8 @@ namespace AndroidADBTools
             autoBrightnessToleranceNumber.ValueChanged += delegate { settings.AutoBrightnessToleranceNit = autoBrightnessToleranceNumber.Value; SaveSettings(); };
             testMeterButton.Click += async delegate { await TestBrightnessMeterAsync(); };
             openWhitePatternButton.Click += async delegate { await OpenWhitePatternOnPhoneAsync(); };
+            saveBrightnessCalibrationButton.Click += async delegate { await SavePendingBrightnessCalibrationAsync(); };
+            applySavedBrightnessCalibrationButton.Click += async delegate { await ApplySavedBrightnessCalibrationAsync(); };
             startAutoBrightnessButton.Click += async delegate
             {
                 if (autoBrightnessRunning)
@@ -1596,6 +1889,47 @@ namespace AndroidADBTools
             };
             number.HandleCreated += delegate { SetWindowTheme(number.Handle, "Explorer", null); };
             return number;
+        }
+
+        private void ConfigureBrightnessResultButton(Button button, bool primaryWhenEnabled)
+        {
+            if (button == null) return;
+            button.AutoEllipsis = true;
+            button.TextAlign = ContentAlignment.MiddleCenter;
+            button.UseCompatibleTextRendering = false;
+            Action refreshAppearance = delegate
+            {
+                if (button.Enabled)
+                {
+                    button.BackColor = primaryWhenEnabled ? Accent : Color.White;
+                    button.ForeColor = primaryWhenEnabled ? Color.White : TextColor;
+                    button.FlatAppearance.BorderSize = primaryWhenEnabled ? 0 : 1;
+                    button.FlatAppearance.BorderColor = Color.FromArgb(205, 214, 220);
+                    button.FlatAppearance.MouseOverBackColor = primaryWhenEnabled
+                        ? Color.FromArgb(31, 143, 128) : Color.FromArgb(235, 242, 242);
+                    button.Cursor = Cursors.Hand;
+                }
+                else
+                {
+                    button.BackColor = Color.FromArgb(232, 237, 239);
+                    button.ForeColor = Color.FromArgb(111, 126, 136);
+                    button.FlatAppearance.BorderSize = 1;
+                    button.FlatAppearance.BorderColor = Color.FromArgb(210, 219, 223);
+                    button.Cursor = Cursors.Default;
+                }
+                button.Invalidate();
+            };
+            button.EnabledChanged += delegate { refreshAppearance(); };
+            button.Paint += delegate(object sender, PaintEventArgs e)
+            {
+                if (button.Enabled) return;
+                e.Graphics.Clear(Color.FromArgb(232, 237, 239));
+                using (Pen pen = new Pen(Color.FromArgb(210, 219, 223)))
+                    e.Graphics.DrawRectangle(pen, 0, 0, Math.Max(0, button.ClientSize.Width - 1), Math.Max(0, button.ClientSize.Height - 1));
+                DrawSmoothText(e.Graphics, button.Text, button.Font, Color.FromArgb(111, 126, 136),
+                    button.ClientRectangle, StringAlignment.Center, StringAlignment.Center, true);
+            };
+            refreshAppearance();
         }
 
         public bool PreFilterMessage(ref Message message)
@@ -1867,12 +2201,13 @@ namespace AndroidADBTools
             Panel volumeCard = new Panel { Dock = DockStyle.Fill, BackColor = Card2, Margin = new Padding(0, 0, 0, 8) };
             TableLayoutPanel volumeLayout = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1,
+                Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1,
                 Padding = new Padding(10, 6, 10, 6), BackColor = Card2
             };
-            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36F));
-            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
-            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
+            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34F));
+            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
+            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
+            volumeLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22F));
             volumeLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             Label volumeTitle = new Label
             {
@@ -1880,17 +2215,25 @@ namespace AndroidADBTools
                 Font = new Font(Font.FontFamily, 11.5F, FontStyle.Bold),
                 Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft
             };
-            volumeMinimumButton = NewButton("調到最低", true, 112);
-            volumeMinimumButton.MinimumSize = new Size(112, 36);
+            volumeMinimumButton = NewButton("調到最低", true, 96);
+            volumeMinimumButton.MinimumSize = new Size(88, 36);
+            volumeMinimumButton.Margin = new Padding(3);
             volumeMinimumButton.Anchor = AnchorStyles.None;
-            volumeMinimumButton.Click += async delegate { await SetMediaVolumeExtremeAsync(false); };
-            volumeMaximumButton = NewButton("調到最高", true, 112);
-            volumeMaximumButton.MinimumSize = new Size(112, 36);
+            volumeMinimumButton.Click += async delegate { await SetMediaVolumeAsync(0); };
+            volumeHalfButton = NewButton("調到 50%", true, 96);
+            volumeHalfButton.MinimumSize = new Size(88, 36);
+            volumeHalfButton.Margin = new Padding(3);
+            volumeHalfButton.Anchor = AnchorStyles.None;
+            volumeHalfButton.Click += async delegate { await SetMediaVolumeAsync(50); };
+            volumeMaximumButton = NewButton("調到最高", true, 96);
+            volumeMaximumButton.MinimumSize = new Size(88, 36);
+            volumeMaximumButton.Margin = new Padding(3);
             volumeMaximumButton.Anchor = AnchorStyles.None;
-            volumeMaximumButton.Click += async delegate { await SetMediaVolumeExtremeAsync(true); };
+            volumeMaximumButton.Click += async delegate { await SetMediaVolumeAsync(100); };
             volumeLayout.Controls.Add(volumeTitle, 0, 0);
             volumeLayout.Controls.Add(volumeMinimumButton, 1, 0);
-            volumeLayout.Controls.Add(volumeMaximumButton, 2, 0);
+            volumeLayout.Controls.Add(volumeHalfButton, 2, 0);
+            volumeLayout.Controls.Add(volumeMaximumButton, 3, 0);
             volumeCard.Controls.Add(volumeLayout);
             toolsColumn.Controls.Add(volumeCard, 0, 0);
 
@@ -2010,6 +2353,686 @@ namespace AndroidADBTools
             actions.Controls.Add(readQuickSettingsButton);
             actions.Controls.Add(applyQuickSettingsButton);
             root.Controls.Add(actions, 0, 4);
+        }
+
+        private void BuildAppManagementTab(TabPage tab)
+        {
+            Panel outer = NewCard();
+            outer.Dock = DockStyle.Fill;
+            outer.Padding = new Padding(18);
+            tab.Controls.Add(outer);
+
+            TableLayoutPanel root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card,
+                ColumnCount = 1,
+                RowCount = 5,
+                Margin = new Padding(0)
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+            outer.Controls.Add(root);
+
+            Panel header = new Panel { Dock = DockStyle.Fill, BackColor = Card };
+            Label title = new Label
+            {
+                Text = "手機程式管理",
+                ForeColor = TextColor,
+                Font = new Font(Font.FontFamily, 17F, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(0, 0)
+            };
+            Label hint = new Label
+            {
+                Text = "掃描目前手機由使用者安裝的應用程式，勾選多個項目後可一次批次移除。",
+                ForeColor = Muted,
+                AutoSize = true,
+                Location = new Point(2, 36)
+            };
+            header.Controls.Add(title);
+            header.Controls.Add(hint);
+            root.Controls.Add(header, 0, 0);
+
+            TableLayoutPanel toolbar = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card2,
+                ColumnCount = 5,
+                RowCount = 1,
+                Padding = new Padding(10, 7, 10, 7),
+                Margin = new Padding(0, 0, 0, 6)
+            };
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 138));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108));
+            Label searchLabel = new Label
+            {
+                Text = "搜尋",
+                Dock = DockStyle.Fill,
+                ForeColor = TextColor,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            installedAppSearchTextBox = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(2, 7, 10, 7),
+                BackColor = Color.White,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            installedAppSearchTextBox.TextChanged += delegate { PopulateInstalledAppsList(); };
+            scanInstalledAppsButton = NewButton("掃描應用程式", true, 128);
+            scanInstalledAppsButton.Dock = DockStyle.Fill;
+            scanInstalledAppsButton.Margin = new Padding(5, 0, 5, 0);
+            scanInstalledAppsButton.Click += async delegate { await ScanInstalledAppsAsync(); };
+            checkAllInstalledAppsButton = NewButton("勾選全部", false, 98);
+            checkAllInstalledAppsButton.Dock = DockStyle.Fill;
+            checkAllInstalledAppsButton.Margin = new Padding(5, 0, 5, 0);
+            checkAllInstalledAppsButton.Enabled = false;
+            checkAllInstalledAppsButton.Click += delegate { CheckAllVisibleInstalledApps(); };
+            clearInstalledAppChecksButton = NewButton("取消全選", false, 98);
+            clearInstalledAppChecksButton.Dock = DockStyle.Fill;
+            clearInstalledAppChecksButton.Margin = new Padding(5, 0, 0, 0);
+            clearInstalledAppChecksButton.Enabled = false;
+            clearInstalledAppChecksButton.Click += delegate { ClearInstalledAppChecks(); };
+            toolbar.Controls.Add(searchLabel, 0, 0);
+            toolbar.Controls.Add(installedAppSearchTextBox, 1, 0);
+            toolbar.Controls.Add(scanInstalledAppsButton, 2, 0);
+            toolbar.Controls.Add(checkAllInstalledAppsButton, 3, 0);
+            toolbar.Controls.Add(clearInstalledAppChecksButton, 4, 0);
+            root.Controls.Add(toolbar, 0, 1);
+
+            TableLayoutPanel statusRow = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0)
+            };
+            statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            statusRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 230));
+            installedAppsStatusLabel = new Label
+            {
+                Text = "連接手機後按「掃描應用程式」。為避免誤刪，系統內建程式不會列入。",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+            hideNonRemovableAppsCheckBox = new CheckBox
+            {
+                Text = "隱藏無法移除的程式",
+                Checked = settings.HideNonRemovableApps.GetValueOrDefault(true),
+                ForeColor = TextColor,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoSize = false
+            };
+            hideNonRemovableAppsCheckBox.CheckedChanged += delegate
+            {
+                settings.HideNonRemovableApps = hideNonRemovableAppsCheckBox.Checked;
+                SaveSettings();
+                PopulateInstalledAppsList();
+            };
+            statusRow.Controls.Add(installedAppsStatusLabel, 0, 0);
+            statusRow.Controls.Add(hideNonRemovableAppsCheckBox, 1, 0);
+            root.Controls.Add(statusRow, 0, 2);
+
+            installedAppsListView = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                CheckBoxes = true,
+                FullRowSelect = true,
+                GridLines = true,
+                HideSelection = false,
+                MultiSelect = true,
+                BackColor = Color.White,
+                ForeColor = TextColor,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            installedAppsListView.Columns.Add("程式名稱", 250);
+            installedAppsListView.Columns.Add("應用程式套件名稱", 430);
+            installedAppsListView.Columns.Add("安裝來源", 190);
+            installedAppsListView.Columns.Add("處理結果", 145);
+            installedAppsListView.HandleCreated += delegate
+            {
+                SetWindowTheme(installedAppsListView.Handle, "Explorer", null);
+            };
+            installedAppsListView.Resize += delegate { ResizeInstalledAppsColumns(); };
+            installedAppsListView.ItemChecked += InstalledAppItemChecked;
+            installedAppsListView.ColumnClick += InstalledAppsColumnClick;
+            root.Controls.Add(installedAppsListView, 0, 3);
+
+            TableLayoutPanel footer = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Card,
+                ColumnCount = 2,
+                RowCount = 1,
+                Padding = new Padding(0, 8, 0, 0),
+                Margin = new Padding(0)
+            };
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 188));
+            installedAppsSelectionLabel = new Label
+            {
+                Text = "尚未掃描",
+                ForeColor = Muted,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            uninstallInstalledAppsButton = NewButton("批次移除勾選程式", false, 178);
+            uninstallInstalledAppsButton.Dock = DockStyle.Fill;
+            uninstallInstalledAppsButton.Enabled = false;
+            uninstallInstalledAppsButton.Click += async delegate { await UninstallCheckedAppsAsync(); };
+            footer.Controls.Add(installedAppsSelectionLabel, 0, 0);
+            footer.Controls.Add(uninstallInstalledAppsButton, 1, 0);
+            root.Controls.Add(footer, 0, 4);
+        }
+
+        private void ResizeInstalledAppsColumns()
+        {
+            if (installedAppsListView == null || installedAppsListView.Columns.Count < 4) return;
+            int displayNameWidth = ScaleValue(250, currentDpiScale);
+            int installerWidth = ScaleValue(190, currentDpiScale);
+            int statusWidth = ScaleValue(145, currentDpiScale);
+            installedAppsListView.Columns[0].Width = displayNameWidth;
+            installedAppsListView.Columns[2].Width = installerWidth;
+            installedAppsListView.Columns[3].Width = statusWidth;
+            installedAppsListView.Columns[1].Width = Math.Max(260,
+                installedAppsListView.ClientSize.Width - displayNameWidth - installerWidth - statusWidth -
+                ScaleValue(8, currentDpiScale));
+        }
+
+        private static string InstalledAppInstallerName(string installerPackage)
+        {
+            if (String.IsNullOrWhiteSpace(installerPackage)) return "未記錄（ADB／APK）";
+            if (String.Equals(installerPackage, "com.android.vending", StringComparison.OrdinalIgnoreCase))
+                return "Google Play";
+            if (String.Equals(installerPackage, "com.sec.android.app.samsungapps", StringComparison.OrdinalIgnoreCase))
+                return "Galaxy Store";
+            if (String.Equals(installerPackage, "com.amazon.venezia", StringComparison.OrdinalIgnoreCase))
+                return "Amazon Appstore";
+            return installerPackage;
+        }
+
+        private static string FriendlyNameFromPackage(string packageName)
+        {
+            string[] parts = (packageName ?? "").Split(new char[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
+            string candidate = parts.Length == 0 ? packageName ?? "" : parts[parts.Length - 1];
+            string[] generic = { "app", "android", "mobile", "client", "release", "prod", "main" };
+            for (int index = parts.Length - 1; index >= 0; index--)
+            {
+                if (!generic.Contains(parts[index], StringComparer.OrdinalIgnoreCase))
+                {
+                    candidate = parts[index];
+                    break;
+                }
+            }
+            candidate = candidate.Replace('_', ' ').Replace('-', ' ');
+            candidate = Regex.Replace(candidate, "([a-z0-9])([A-Z])", "$1 $2").Trim();
+            if (candidate.Length == 0) return packageName ?? "";
+            return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(candidate.ToLower(CultureInfo.CurrentCulture));
+        }
+
+        private string InstalledAppSortValue(InstalledAppInfo app, int column)
+        {
+            if (app == null) return "";
+            if (column == 1) return app.PackageName ?? "";
+            if (column == 2) return InstalledAppInstallerName(app.InstallerPackage);
+            return String.IsNullOrWhiteSpace(app.DisplayName)
+                ? FriendlyNameFromPackage(app.PackageName) : app.DisplayName;
+        }
+
+        private IEnumerable<InstalledAppInfo> SortedInstalledApps()
+        {
+            Func<InstalledAppInfo, string> keySelector = delegate(InstalledAppInfo app)
+            {
+                return InstalledAppSortValue(app, installedAppsSortColumn);
+            };
+            IOrderedEnumerable<InstalledAppInfo> ordered = installedAppsSortAscending
+                ? installedApps.OrderBy(keySelector, StringComparer.CurrentCultureIgnoreCase)
+                : installedApps.OrderByDescending(keySelector, StringComparer.CurrentCultureIgnoreCase);
+            return ordered.ThenBy(delegate(InstalledAppInfo app) { return app.PackageName; },
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        private void UpdateInstalledAppColumnHeaders()
+        {
+            if (installedAppsListView == null || installedAppsListView.Columns.Count < 4) return;
+            string[] labels = { "程式名稱", "應用程式套件名稱", "安裝來源" };
+            for (int index = 0; index < labels.Length; index++)
+            {
+                installedAppsListView.Columns[index].Text = labels[index] +
+                    (installedAppsSortColumn == index ? (installedAppsSortAscending ? " ▲" : " ▼") : "");
+            }
+            installedAppsListView.Columns[3].Text = "處理結果";
+        }
+
+        private void InstalledAppsColumnClick(object sender, ColumnClickEventArgs e)
+        {
+            if (e.Column < 0 || e.Column > 2 || busy) return;
+            if (installedAppsSortColumn == e.Column)
+                installedAppsSortAscending = !installedAppsSortAscending;
+            else
+            {
+                installedAppsSortColumn = e.Column;
+                installedAppsSortAscending = true;
+            }
+            PopulateInstalledAppsList();
+        }
+
+        private async Task<int> ResolveInstalledAppNamesAsync(DeviceInfo device, List<InstalledAppInfo> apps)
+        {
+            foreach (InstalledAppInfo app in apps)
+                app.DisplayName = FriendlyNameFromPackage(app.PackageName);
+            if (device == null || apps.Count == 0) return 0;
+
+            string token = Guid.NewGuid().ToString("N");
+            string localJar = Path.Combine(Path.GetTempPath(), "androidadbtools-app-labels-" + token + ".jar");
+            string remoteJar = "/data/local/tmp/androidadbtools_app_labels_" + token + ".jar";
+            int resolvedCount = 0;
+            bool readerPushed = false;
+            try
+            {
+                File.WriteAllBytes(localJar, AppLabelReaderPayload.GetJarBytes());
+                AdbResult push = await RunAdbAsync("-s " + Quote(device.Serial) + " push " +
+                    Quote(localJar) + " " + Quote(remoteJar));
+                if (!AdbCommandSucceeded(push))
+                {
+                    Log("程式管理：無法部署程式名稱讀取器，將以套件名稱簡化顯示。" +
+                        ExplainAdbFailure(push));
+                }
+                else
+                {
+                    readerPushed = true;
+                    Dictionary<string, InstalledAppInfo> byPackage = apps.ToDictionary(
+                        delegate(InstalledAppInfo app) { return app.PackageName; },
+                        StringComparer.OrdinalIgnoreCase);
+                    const int batchSize = 70;
+                    for (int offset = 0; offset < apps.Count; offset += batchSize)
+                    {
+                        string[] packages = apps.Skip(offset).Take(batchSize)
+                            .Select(delegate(InstalledAppInfo app) { return app.PackageName; })
+                            .Where(InstalledAppParser.IsValidPackageName).ToArray();
+                        if (packages.Length == 0) continue;
+                        string remoteCommand = "CLASSPATH=" + remoteJar +
+                            " app_process /system/bin com.ahui3c.androidadbtools.AppLabelReader " +
+                            String.Join(" ", packages);
+                        AdbResult labels = await RunAdbAsync("-s " + Quote(device.Serial) +
+                            " shell " + Quote(remoteCommand));
+                        string[] lines = (labels.Output ?? "").Replace("\r", "").Split('\n');
+                        foreach (string line in lines)
+                        {
+                            string[] fields = line.Split('\t');
+                            if (fields.Length < 2) continue;
+                            string packageName = fields[0].Trim();
+                            InstalledAppInfo app;
+                            if (!byPackage.TryGetValue(packageName, out app)) continue;
+                            try
+                            {
+                                string label = Encoding.UTF8.GetString(Convert.FromBase64String(
+                                    fields[1].Trim()));
+                                label = Regex.Replace(label ?? "", "[\\r\\n\\t]+", " ").Trim();
+                                if (label.Length > 0 && label.Length <= 200 &&
+                                    !String.Equals(label, app.PackageName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    app.DisplayName = label;
+                                    resolvedCount++;
+                                }
+                            }
+                            catch { }
+                            if (fields.Length >= 3 && fields[2].Trim() == "1")
+                            {
+                                app.IsUninstallBlocked = true;
+                                app.RestrictionReason = "Android 系統或裝置管理政策禁止移除";
+                                app.Status = "無法移除";
+                            }
+                        }
+                        if (!AdbCommandSucceeded(labels) && resolvedCount == 0)
+                        {
+                            Log("程式管理：手機未能回傳應用程式名稱，將以套件名稱簡化顯示。" +
+                                ExplainAdbFailure(labels));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("程式管理：讀取應用程式名稱失敗，將使用簡化名稱。" + ex.Message);
+            }
+            finally
+            {
+                try { if (File.Exists(localJar)) File.Delete(localJar); } catch { }
+            }
+            if (readerPushed)
+            {
+                try
+                {
+                    await RunAdbAsync("-s " + Quote(device.Serial) + " shell rm -f " + Quote(remoteJar));
+                }
+                catch { }
+            }
+            return resolvedCount;
+        }
+
+        private void PopulateInstalledAppsList()
+        {
+            if (installedAppsListView == null) return;
+            string keyword = installedAppSearchTextBox == null ? "" : installedAppSearchTextBox.Text.Trim();
+            updatingInstalledAppList = true;
+            installedAppsListView.BeginUpdate();
+            try
+            {
+                installedAppsListView.Items.Clear();
+                foreach (InstalledAppInfo app in SortedInstalledApps())
+                {
+                    if (hideNonRemovableAppsCheckBox != null && hideNonRemovableAppsCheckBox.Checked &&
+                        app.IsUninstallBlocked) continue;
+                    string installer = InstalledAppInstallerName(app.InstallerPackage);
+                    bool matches = keyword.Length == 0 ||
+                        app.DisplayName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        app.PackageName.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        installer.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!matches) continue;
+
+                    ListViewItem item = new ListViewItem(String.IsNullOrWhiteSpace(app.DisplayName)
+                        ? FriendlyNameFromPackage(app.PackageName) : app.DisplayName);
+                    item.SubItems.Add(app.PackageName);
+                    item.SubItems.Add(installer);
+                    item.SubItems.Add(String.IsNullOrWhiteSpace(app.Status) ? "已安裝" : app.Status);
+                    item.Tag = app;
+                    item.Checked = !app.IsUninstallBlocked && checkedInstalledPackages.Contains(app.PackageName);
+                    if (app.IsUninstallBlocked) item.ForeColor = Muted;
+                    else if (app.StatusIsError) item.ForeColor = Red;
+                    installedAppsListView.Items.Add(item);
+                }
+            }
+            finally
+            {
+                installedAppsListView.EndUpdate();
+                updatingInstalledAppList = false;
+            }
+            UpdateInstalledAppColumnHeaders();
+            UpdateInstalledAppSelectionState();
+        }
+
+        private void InstalledAppItemChecked(object sender, ItemCheckedEventArgs e)
+        {
+            if (updatingInstalledAppList || e.Item == null) return;
+            InstalledAppInfo app = e.Item.Tag as InstalledAppInfo;
+            if (app == null) return;
+            if (app.IsUninstallBlocked && e.Item.Checked)
+            {
+                BeginInvoke(new Action(delegate
+                {
+                    updatingInstalledAppList = true;
+                    e.Item.Checked = false;
+                    updatingInstalledAppList = false;
+                    UpdateInstalledAppSelectionState();
+                }));
+                return;
+            }
+            if (e.Item.Checked) checkedInstalledPackages.Add(app.PackageName);
+            else checkedInstalledPackages.Remove(app.PackageName);
+            BeginInvoke(new Action(UpdateInstalledAppSelectionState));
+        }
+
+        private void UpdateInstalledAppSelectionState()
+        {
+            if (installedAppsSelectionLabel == null || uninstallInstalledAppsButton == null) return;
+            int checkedCount = installedApps.Count(delegate(InstalledAppInfo app)
+            {
+                return checkedInstalledPackages.Contains(app.PackageName);
+            });
+            int visibleCount = installedAppsListView == null ? 0 : installedAppsListView.Items.Count;
+            installedAppsSelectionLabel.Text = installedApps.Count == 0
+                ? "尚未掃描"
+                : "共 " + installedApps.Count + " 個應用程式；目前顯示 " + visibleCount + " 個，已勾選 " + checkedCount + " 個。";
+            installedAppsSelectionLabel.ForeColor = checkedCount > 0 ? TextColor : Muted;
+            uninstallInstalledAppsButton.Enabled = !busy && checkedCount > 0;
+        }
+
+        private void CheckAllVisibleInstalledApps()
+        {
+            if (installedAppsListView == null || busy) return;
+            updatingInstalledAppList = true;
+            try
+            {
+                foreach (ListViewItem item in installedAppsListView.Items)
+                {
+                    InstalledAppInfo app = item.Tag as InstalledAppInfo;
+                    if (app == null || app.IsUninstallBlocked) continue;
+                    checkedInstalledPackages.Add(app.PackageName);
+                    item.Checked = true;
+                }
+            }
+            finally { updatingInstalledAppList = false; }
+            UpdateInstalledAppSelectionState();
+        }
+
+        private void ClearInstalledAppChecks()
+        {
+            if (installedAppsListView == null || busy) return;
+            checkedInstalledPackages.Clear();
+            updatingInstalledAppList = true;
+            try
+            {
+                foreach (ListViewItem item in installedAppsListView.Items) item.Checked = false;
+            }
+            finally { updatingInstalledAppList = false; }
+            UpdateInstalledAppSelectionState();
+        }
+
+        private void ResetInstalledApps(string status)
+        {
+            installedApps.Clear();
+            checkedInstalledPackages.Clear();
+            installedAppsDeviceSerial = "";
+            if (installedAppsListView != null) installedAppsListView.Items.Clear();
+            if (installedAppsStatusLabel != null)
+            {
+                installedAppsStatusLabel.Text = status;
+                installedAppsStatusLabel.ForeColor = Muted;
+            }
+            UpdateInstalledAppSelectionState();
+        }
+
+        private async Task ScanInstalledAppsAsync()
+        {
+            if (busy) return;
+            if (!await WaitForReadyDeviceAsync("掃描手機應用程式")) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+
+            busy = true;
+            SetInstallButtons(false);
+            installedAppsStatusLabel.Text = "正在掃描「" + device.DisplayName + "」的使用者應用程式...";
+            installedAppsStatusLabel.ForeColor = Muted;
+            Log("程式管理：開始掃描 " + device + " 的使用者應用程式。");
+            try
+            {
+                AdbResult result = await RunAdbAsync("-s " + Quote(device.Serial) +
+                    " shell pm list packages -3 -f -i");
+                if (!AdbCommandSucceeded(result))
+                {
+                    string detail = ExplainAdbFailure(result);
+                    installedAppsStatusLabel.Text = "掃描失敗：" + detail;
+                    installedAppsStatusLabel.ForeColor = Red;
+                    Log("程式管理掃描失敗：" + detail);
+                    MessageBox.Show(this, "無法讀取手機已安裝的應用程式。\n\n" + detail,
+                        "掃描失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                List<InstalledAppInfo> parsed = InstalledAppParser.Parse(result.Output);
+                installedAppsStatusLabel.Text = "已找到 " + parsed.Count +
+                    " 個應用程式，正在讀取容易辨識的程式名稱...";
+                int namedCount = await ResolveInstalledAppNamesAsync(device, parsed);
+                installedApps.Clear();
+                installedApps.AddRange(parsed);
+                checkedInstalledPackages.Clear();
+                installedAppsDeviceSerial = device.Serial;
+                PopulateInstalledAppsList();
+                installedAppsStatusLabel.Text = parsed.Count == 0
+                    ? "這台手機沒有可列出的使用者應用程式。"
+                    : "已掃描「" + device.DisplayName + "」：找到 " + parsed.Count +
+                        " 個使用者應用程式，成功讀取 " + namedCount + " 個程式名稱。";
+                installedAppsStatusLabel.ForeColor = parsed.Count == 0 ? Muted : Green;
+                Log("程式管理：掃描完成，共找到 " + parsed.Count + " 個使用者應用程式。");
+            }
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+                UpdateInstalledAppSelectionState();
+            }
+        }
+
+        private ListViewItem FindInstalledAppListItem(string packageName)
+        {
+            if (installedAppsListView == null) return null;
+            return installedAppsListView.Items.Cast<ListViewItem>().FirstOrDefault(delegate(ListViewItem item)
+            {
+                InstalledAppInfo app = item.Tag as InstalledAppInfo;
+                return app != null && String.Equals(app.PackageName, packageName, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private async Task UninstallCheckedAppsAsync()
+        {
+            if (busy) return;
+            List<InstalledAppInfo> selected = installedApps.Where(delegate(InstalledAppInfo app)
+            {
+                return checkedInstalledPackages.Contains(app.PackageName) &&
+                    !app.IsUninstallBlocked &&
+                    InstalledAppParser.IsValidPackageName(app.PackageName);
+            }).ToList();
+            if (selected.Count == 0)
+            {
+                MessageBox.Show(this, "請先勾選要移除的應用程式。", "程式管理",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string preview = String.Join("\n", selected.Take(12).Select(delegate(InstalledAppInfo app)
+            {
+                return "• " + (String.IsNullOrWhiteSpace(app.DisplayName)
+                    ? FriendlyNameFromPackage(app.PackageName) : app.DisplayName) +
+                    "（" + app.PackageName + "）";
+            }).ToArray());
+            if (selected.Count > 12) preview += "\n• 以及其他 " + (selected.Count - 12) + " 個應用程式";
+            DialogResult confirmation = MessageBox.Show(this,
+                "確定要從目前手機移除以下 " + selected.Count + " 個應用程式嗎？\n\n" + preview +
+                "\n\n應用程式及其本機資料將被刪除，此動作無法由本程式復原。",
+                "確認批次移除", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirmation != DialogResult.Yes) return;
+
+            if (!await WaitForReadyDeviceAsync("批次移除應用程式")) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            if (!String.Equals(device.Serial, installedAppsDeviceSerial, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(this,
+                    "目前選取的手機已經變更。為避免從錯誤的手機移除程式，請重新掃描後再操作。",
+                    "手機已變更", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ResetInstalledApps("目前操作手機已變更，請重新掃描應用程式。");
+                return;
+            }
+
+            int succeeded = 0;
+            List<string> succeededPackages = new List<string>();
+            List<string> failures = new List<string>();
+            busy = true;
+            SetInstallButtons(false);
+            try
+            {
+                for (int index = 0; index < selected.Count; index++)
+                {
+                    InstalledAppInfo app = selected[index];
+                    installedAppsStatusLabel.Text = "正在移除 " + (index + 1) + " / " + selected.Count +
+                        "：" + app.PackageName;
+                    installedAppsStatusLabel.ForeColor = Muted;
+                    ListViewItem visibleItem = FindInstalledAppListItem(app.PackageName);
+                    if (visibleItem != null)
+                    {
+                        visibleItem.SubItems[3].Text = "移除中...";
+                        visibleItem.ForeColor = Color.FromArgb(191, 128, 31);
+                        visibleItem.EnsureVisible();
+                    }
+
+                    AdbResult result = await RunAdbAsync("-s " + Quote(device.Serial) +
+                        " uninstall " + Quote(app.PackageName));
+                    string output = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                    bool success = AdbCommandSucceeded(result) &&
+                        output.IndexOf("Success", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (success)
+                    {
+                        succeeded++;
+                        succeededPackages.Add(app.PackageName);
+                        checkedInstalledPackages.Remove(app.PackageName);
+                        Log("程式管理：已從 " + device.DisplayName + " 移除 " + app.PackageName + "。");
+                    }
+                    else
+                    {
+                        app.Status = "移除失敗";
+                        app.StatusIsError = true;
+                        if (IsConfirmedUninstallRestriction(output))
+                        {
+                            app.IsUninstallBlocked = true;
+                            app.RestrictionReason = output;
+                            app.Status = "無法移除";
+                            checkedInstalledPackages.Remove(app.PackageName);
+                        }
+                        failures.Add(app.PackageName + "：" +
+                            (String.IsNullOrWhiteSpace(output) ? ExplainAdbFailure(result) : output));
+                        Log("程式管理移除失敗：" + app.PackageName + " / " +
+                            (String.IsNullOrWhiteSpace(output) ? ExplainAdbFailure(result) : output));
+                    }
+                }
+
+                installedApps.RemoveAll(delegate(InstalledAppInfo app)
+                {
+                    return succeededPackages.Contains(app.PackageName, StringComparer.OrdinalIgnoreCase);
+                });
+                PopulateInstalledAppsList();
+                installedAppsStatusLabel.Text = "批次移除完成：成功 " + succeeded + " 個，失敗 " +
+                    failures.Count + " 個。";
+                installedAppsStatusLabel.ForeColor = failures.Count == 0 ? Green : Red;
+            }
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+                UpdateInstalledAppSelectionState();
+            }
+
+            string failureDetail = failures.Count == 0 ? "" : "\n\n失敗項目：\n" +
+                String.Join("\n", failures.Take(10).ToArray()) +
+                (failures.Count > 10 ? "\n以及其他 " + (failures.Count - 10) + " 個，請查看執行紀錄。" : "");
+            MessageBox.Show(this, "批次移除完成。\n\n成功：" + succeeded + " 個\n失敗：" +
+                failures.Count + " 個" + failureDetail, "程式管理",
+                MessageBoxButtons.OK, failures.Count == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        }
+
+        private static bool IsConfirmedUninstallRestriction(string output)
+        {
+            string detail = output ?? "";
+            return detail.IndexOf("DELETE_FAILED_DEVICE_POLICY_MANAGER", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                detail.IndexOf("DELETE_FAILED_OWNER_BLOCKED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                detail.IndexOf("DELETE_FAILED_USER_RESTRICTED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                detail.IndexOf("uninstall blocked", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                detail.IndexOf("active device administrator", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void BuildDeviceInformationTab(TabPage tab)
@@ -2799,7 +3822,9 @@ namespace AndroidADBTools
             }
             ApkGroup group = groupList.Items[e.Index] as ApkGroup;
             string name = group == null ? groupList.Items[e.Index].ToString() : group.Name;
-            string count = group == null ? "" : (group.IsFolderGroup ? "資料夾同步　" : "") + group.Apks.Count + " 個套件";
+            string count = group == null ? "" : (IsCuratedToolsGroup(group)
+                ? "GitHub 線上下載　" + curatedTools.Count + " 個工具"
+                : (group.IsFolderGroup ? "資料夾同步　" : "") + group.Apks.Count + " 個套件");
             int textLeft = e.Bounds.X + ScaleValue(14, currentDpiScale);
             int horizontalPadding = ScaleValue(14, currentDpiScale);
             int nameHeight = Math.Max(groupList.Font.Height + ScaleValue(4, currentDpiScale),
@@ -2817,12 +3842,10 @@ namespace AndroidADBTools
                 {
                     int iconSize = ScaleValue(19, currentDpiScale);
                     int iconTop = e.Bounds.Top + Math.Max(0, (e.Bounds.Height - iconSize) / 2);
-                    Color folderFill = group.IsFolderGroup
-                        ? Color.FromArgb(255, 190, 75)
-                        : Color.FromArgb(86, 166, 255);
-                    Color folderEdge = group.IsFolderGroup
-                        ? Color.FromArgb(205, 132, 33)
-                        : Color.FromArgb(34, 105, 190);
+                    Color folderFill = IsCuratedToolsGroup(group) ? Accent :
+                        (group.IsFolderGroup ? Color.FromArgb(255, 190, 75) : Color.FromArgb(86, 166, 255));
+                    Color folderEdge = IsCuratedToolsGroup(group) ? Color.FromArgb(20, 112, 101) :
+                        (group.IsFolderGroup ? Color.FromArgb(205, 132, 33) : Color.FromArgb(34, 105, 190));
                     DrawFolderIcon(e.Graphics, new Rectangle(textLeft, iconTop, iconSize, iconSize), folderFill, folderEdge);
                     textLeft += iconSize + ScaleValue(9, currentDpiScale);
                 }
@@ -2893,11 +3916,80 @@ namespace AndroidADBTools
 
             string path = item.Tag as string;
             if (String.IsNullOrWhiteSpace(path)) return;
+            CuratedToolDefinition curatedTool = CuratedToolForPath(path);
+            if (curatedTool != null && IsCuratedToolsGroup(SelectedGroup()))
+            {
+                string curatedText = "用途：" + curatedTool.Description + Environment.NewLine +
+                    "GitHub：https://github.com/ahui3c/" + curatedTool.Repository + Environment.NewLine +
+                    "本機 APK：" + path;
+                apkListToolTip.Show(curatedText, list, e.X + ScaleValue(16, currentDpiScale),
+                    e.Y + ScaleValue(20, currentDpiScale), 12000);
+                return;
+            }
             string fileName = Path.GetFileName(path);
             string text = "完整檔名：" + fileName + Environment.NewLine +
                 "完整位置：" + path;
             apkListToolTip.Show(text, list, e.X + ScaleValue(16, currentDpiScale),
                 e.Y + ScaleValue(20, currentDpiScale), 12000);
+        }
+
+        private void ApkListMouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right) return;
+            ListViewItem item = apkList.GetItemAt(e.X, e.Y);
+            apkList.SelectedItems.Clear();
+            if (item != null)
+            {
+                item.Selected = true;
+                item.Focused = true;
+            }
+        }
+
+        private void ApkListContextMenuOpening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            ApkGroup group = SelectedGroup();
+            bool hasItem = group != null && apkList.SelectedItems.Count > 0;
+            bool curated = IsCuratedToolsGroup(group);
+            installSelectedApkMenuItem.Text = curated ? "安裝已下載版本" : "快速安裝";
+            installSelectedApkMenuItem.Enabled = !busy && hasItem;
+            downloadSelectedCuratedToolMenuItem.Visible = curated;
+            downloadSelectedCuratedToolMenuItem.Enabled = !busy && hasItem && curated;
+            removeSelectedApkMenuItem.Visible = group != null && !group.IsFolderGroup && !curated;
+            removeSelectedApkMenuItem.Enabled = !busy && hasItem && group != null && !group.IsFolderGroup && !curated;
+            if (apkListContextMenu.Items.Count > 2)
+                apkListContextMenu.Items[2].Visible = removeSelectedApkMenuItem.Visible;
+            if (!hasItem) e.Cancel = true;
+        }
+
+        private void ApkListItemDrag(object sender, ItemDragEventArgs e)
+        {
+            ApkGroup group = SelectedGroup();
+            ListViewItem item = e.Item as ListViewItem;
+            if (busy || group == null || group.IsFolderGroup || IsCuratedToolsGroup(group) || item == null || item.Index < 0) return;
+            apkListToolTip.Hide(apkList);
+            apkList.DoDragDrop(new ApkListDragData(group.Id, item.Index), DragDropEffects.Move);
+        }
+
+        private void ClearApkListInsertionMark()
+        {
+            if (apkList == null) return;
+            apkList.InsertionMark.Index = -1;
+        }
+
+        private int UpdateApkListInsertionMark(Point location)
+        {
+            ListViewItem target = apkList.GetItemAt(location.X, location.Y);
+            if (target == null)
+            {
+                apkList.InsertionMark.AppearsAfterItem = true;
+                apkList.InsertionMark.Index = apkList.Items.Count == 0 ? -1 : apkList.Items.Count - 1;
+                return apkList.Items.Count;
+            }
+            Rectangle bounds = target.Bounds;
+            bool after = location.Y >= bounds.Top + bounds.Height / 2;
+            apkList.InsertionMark.AppearsAfterItem = after;
+            apkList.InsertionMark.Index = target.Index;
+            return target.Index + (after ? 1 : 0);
         }
 
         private void GroupListMouseDown(object sender, MouseEventArgs e)
@@ -2906,6 +3998,7 @@ namespace AndroidADBTools
             if (busy || e.Button != MouseButtons.Left) return;
             int index = groupList.IndexFromPoint(e.Location);
             if (index < 0 || index >= groupList.Items.Count) return;
+            if (IsCuratedToolsGroup(groupList.Items[index] as ApkGroup)) return;
             groupDragStartIndex = index;
             groupDragStartPoint = e.Location;
         }
@@ -2917,7 +4010,7 @@ namespace AndroidADBTools
             if (index < 0 || index >= groupList.Items.Count) return;
             groupList.SelectedIndex = index;
             ApkGroup group = SelectedGroup();
-            if (group != null && !group.IsFolderGroup) RenameGroup(groupList, EventArgs.Empty);
+            if (group != null && !group.IsFolderGroup && !IsCuratedToolsGroup(group)) RenameGroup(groupList, EventArgs.Empty);
         }
 
         private void GroupListDragMouseMove(object sender, MouseEventArgs e)
@@ -2930,7 +4023,7 @@ namespace AndroidADBTools
             if (dragBounds.Contains(e.Location)) return;
             ApkGroup group = groupList.Items[groupDragStartIndex] as ApkGroup;
             groupDragStartIndex = -1;
-            if (group == null) return;
+            if (group == null || IsCuratedToolsGroup(group)) return;
             groupNameToolTip.Hide(groupList);
             groupList.DoDragDrop(group, DragDropEffects.Move);
         }
@@ -2990,7 +4083,7 @@ namespace AndroidADBTools
             SetGroupDragInsertIndex(-1);
             if (busy || insertIndex < 0 || !e.Data.GetDataPresent(typeof(ApkGroup))) return;
             ApkGroup selected = e.Data.GetData(typeof(ApkGroup)) as ApkGroup;
-            if (selected == null) return;
+            if (selected == null || IsCuratedToolsGroup(selected)) return;
             List<ApkGroup> groups = AllGroups();
             int sourceIndex = groups.FindIndex(delegate(ApkGroup group) { return group.Id == selected.Id; });
             if (sourceIndex < 0) return;
@@ -3050,8 +4143,11 @@ namespace AndroidADBTools
                         if (loaded.Groups == null) loaded.Groups = new List<ApkGroup>();
                         if (loaded.GroupOrder == null) loaded.GroupOrder = new List<string>();
                         if (loaded.SelectedGroupId == null) loaded.SelectedGroupId = "";
+                        if (String.IsNullOrWhiteSpace(loaded.SelectedModule)) loaded.SelectedModule = "common-apps";
+                        if (!loaded.HideNonRemovableApps.HasValue) loaded.HideNonRemovableApps = true;
                         if (loaded.WifiDevices == null) loaded.WifiDevices = new List<WifiDeviceRecord>();
                         if (loaded.DownloadCheckpoints == null) loaded.DownloadCheckpoints = new List<DownloadCheckpoint>();
+                        if (loaded.BrightnessCalibrations == null) loaded.BrightnessCalibrations = new List<BrightnessCalibrationRecord>();
                         if (String.IsNullOrWhiteSpace(loaded.DownloadMode)) loaded.DownloadMode = "Zip";
                         if (!loaded.IncrementalFolderDownload.HasValue) loaded.IncrementalFolderDownload = true;
                         if (loaded.AutoBrightnessTargetNit <= 0) loaded.AutoBrightnessTargetNit = 200M;
@@ -3154,13 +4250,87 @@ namespace AndroidADBTools
             return "";
         }
 
-        private async Task<AdbResult> RunAdbAsync(string arguments)
+        private AdbPortSelection GetAdbPortSelection()
         {
-            string adb = FindAdb();
-            if (String.IsNullOrWhiteSpace(adb))
+            lock (adbPortSync)
             {
-                return new AdbResult { Started = false, ExitCode = -1, Error = "找不到 adb.exe" };
+                if (adbPortSelection == null) adbPortSelection = AdbPortSelector.Select();
+                return adbPortSelection;
             }
+        }
+
+        private AdbPortSelection SwitchAdbPortAfterFailure(int failedPort)
+        {
+            lock (adbPortSync)
+            {
+                if (adbPortSelection != null && adbPortSelection.Port != failedPort)
+                    return adbPortSelection;
+                adbPortSelection = AdbPortSelector.SelectFallback(failedPort);
+                adbPortNoticeLogged = false;
+                return adbPortSelection;
+            }
+        }
+
+        private void LogAdbPortSelection(AdbPortSelection selection)
+        {
+            if (selection == null || !selection.UsedFallback ||
+                String.IsNullOrWhiteSpace(selection.Reason)) return;
+            bool shouldLog;
+            lock (adbPortSync)
+            {
+                shouldLog = !adbPortNoticeLogged;
+                if (shouldLog) adbPortNoticeLogged = true;
+            }
+            if (shouldLog) Log("ADB 連接埠自動切換：" + selection.Reason);
+        }
+
+        private static void AttachAdbPortInformation(AdbResult result, AdbPortSelection selection)
+        {
+            if (result == null || selection == null) return;
+            result.ServerPort = selection.Port;
+            result.UsedFallbackPort = selection.UsedFallback;
+            result.PortNotice = selection.Reason;
+        }
+
+        private static string AdbArguments(string arguments, int port)
+        {
+            return "-P " + port.ToString(CultureInfo.InvariantCulture) + " " + (arguments ?? "");
+        }
+
+        private static string ExplainAdbFailure(AdbResult result)
+        {
+            if (result == null) return "ADB 未回傳執行結果。";
+            string detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+            int port = result.ServerPort > 0 ? result.ServerPort : AdbPortSelector.DefaultPort;
+            if (detail.IndexOf("10013", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                detail.IndexOf("cannot bind", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Windows 拒絕 ADB 綁定本機 TCP " + port +
+                    "（Socket 10013）。該連接埠可能被系統保留或遭安全性軟體封鎖。" +
+                    (String.IsNullOrWhiteSpace(result.PortNotice) ? "" : " " + result.PortNotice);
+            }
+            if (AdbPortSelector.IsDaemonStartupFailure(detail))
+            {
+                return "ADB 背景服務無法在本機 TCP " + port + " 啟動或連線。" +
+                    (String.IsNullOrWhiteSpace(result.PortNotice) ? "" : " " + result.PortNotice) +
+                    (String.IsNullOrWhiteSpace(detail) ? "" : " 原始訊息：" + detail);
+            }
+            return String.IsNullOrWhiteSpace(detail)
+                ? "ADB 執行失敗（本機 TCP " + port + "）。"
+                : detail;
+        }
+
+        private string AdbPortDisplaySuffix()
+        {
+            AdbPortSelection selection;
+            lock (adbPortSync) { selection = adbPortSelection; }
+            return selection != null && selection.UsedFallback
+                ? "　｜　ADB TCP " + selection.Port + "（已自動避開 5037）"
+                : "";
+        }
+
+        private async Task<AdbResult> ExecuteAdbAsync(string adb, string arguments, int port)
+        {
             return await Task.Run(delegate
             {
                 AdbResult result = new AdbResult();
@@ -3169,7 +4339,7 @@ namespace AndroidADBTools
                     ProcessStartInfo psi = new ProcessStartInfo
                     {
                         FileName = adb,
-                        Arguments = arguments,
+                        Arguments = AdbArguments(arguments, port),
                         UseShellExecute = false,
                         CreateNoWindow = true,
                         RedirectStandardOutput = true,
@@ -3198,11 +4368,36 @@ namespace AndroidADBTools
             });
         }
 
-        private async Task<Tuple<AdbResult, byte[]>> RunAdbToBytesAsync(string arguments)
+        private async Task<AdbResult> RunAdbAsync(string arguments)
         {
             string adb = FindAdb();
             if (String.IsNullOrWhiteSpace(adb))
-                return Tuple.Create(new AdbResult { Started = false, ExitCode = -1, Error = "找不到 adb.exe" }, new byte[0]);
+                return new AdbResult { Started = false, ExitCode = -1, Error = "找不到 adb.exe" };
+
+            AdbPortSelection selection = GetAdbPortSelection();
+            LogAdbPortSelection(selection);
+            AdbResult result = await ExecuteAdbAsync(adb, arguments, selection.Port);
+            AttachAdbPortInformation(result, selection);
+
+            string detail = (result.Output ?? "") + " " + (result.Error ?? "");
+            if ((!result.Started || result.ExitCode != 0) &&
+                selection.Port == AdbPortSelector.DefaultPort &&
+                AdbPortSelector.IsDaemonStartupFailure(detail))
+            {
+                AdbPortSelection fallback = SwitchAdbPortAfterFailure(selection.Port);
+                if (fallback.Port != selection.Port)
+                {
+                    LogAdbPortSelection(fallback);
+                    result = await ExecuteAdbAsync(adb, arguments, fallback.Port);
+                    AttachAdbPortInformation(result, fallback);
+                }
+            }
+            return result;
+        }
+
+        private async Task<Tuple<AdbResult, byte[]>> ExecuteAdbToBytesAsync(
+            string adb, string arguments, int port)
+        {
             return await Task.Run(delegate
             {
                 AdbResult result = new AdbResult();
@@ -3212,7 +4407,7 @@ namespace AndroidADBTools
                     ProcessStartInfo psi = new ProcessStartInfo
                     {
                         FileName = adb,
-                        Arguments = arguments,
+                        Arguments = AdbArguments(arguments, port),
                         UseShellExecute = false,
                         CreateNoWindow = true,
                         RedirectStandardOutput = true,
@@ -3241,6 +4436,34 @@ namespace AndroidADBTools
                 }
                 return Tuple.Create(result, data);
             });
+        }
+
+        private async Task<Tuple<AdbResult, byte[]>> RunAdbToBytesAsync(string arguments)
+        {
+            string adb = FindAdb();
+            if (String.IsNullOrWhiteSpace(adb))
+                return Tuple.Create(new AdbResult { Started = false, ExitCode = -1, Error = "找不到 adb.exe" }, new byte[0]);
+
+            AdbPortSelection selection = GetAdbPortSelection();
+            LogAdbPortSelection(selection);
+            Tuple<AdbResult, byte[]> response =
+                await ExecuteAdbToBytesAsync(adb, arguments, selection.Port);
+            AttachAdbPortInformation(response.Item1, selection);
+
+            string detail = (response.Item1.Output ?? "") + " " + (response.Item1.Error ?? "");
+            if ((!response.Item1.Started || response.Item1.ExitCode != 0) &&
+                selection.Port == AdbPortSelector.DefaultPort &&
+                AdbPortSelector.IsDaemonStartupFailure(detail))
+            {
+                AdbPortSelection fallback = SwitchAdbPortAfterFailure(selection.Port);
+                if (fallback.Port != selection.Port)
+                {
+                    LogAdbPortSelection(fallback);
+                    response = await ExecuteAdbToBytesAsync(adb, arguments, fallback.Port);
+                    AttachAdbPortInformation(response.Item1, fallback);
+                }
+            }
+            return response;
         }
 
         private async Task<Tuple<AdbResult, byte[]>> CaptureDeviceScreenshotAsync(DeviceInfo device)
@@ -3294,6 +4517,7 @@ namespace AndroidADBTools
         private async Task CheckConnectionAsync()
         {
             if (busy) return;
+            ResetInstalledApps("連線狀態已更新；請重新掃描目前手機的應用程式。");
             busy = true;
             refreshButton.Enabled = false;
             devices.Clear();
@@ -3324,8 +4548,8 @@ namespace AndroidADBTools
                 adbStatusLabel.Text = "● ADB 執行失敗";
                 adbStatusLabel.ForeColor = Red;
                 deviceStatusLabel.Text = "無法啟動 ADB";
-                SetDeviceDetail(CleanOutput(result.Error), null);
-                Log("ADB 錯誤：" + CleanOutput(result.Error));
+                SetDeviceDetail(ExplainAdbFailure(result), null);
+                Log("ADB 錯誤：" + ExplainAdbFailure(result));
                 RefreshDeviceSelector(new List<DeviceInfo>());
             }
             else
@@ -3337,6 +4561,7 @@ namespace AndroidADBTools
             refreshButton.Enabled = true;
             await LoadSelectedDeviceInformationCacheAsync();
             await RefreshDownloadCheckpointStatusAsync();
+            await RefreshSavedBrightnessCalibrationAsync();
         }
 
         private List<DeviceInfo> ParseDevices(string output)
@@ -3401,11 +4626,13 @@ namespace AndroidADBTools
             if (updatingDeviceSelector) return;
             DeviceInfo selected = deviceSelector == null ? null : deviceSelector.SelectedItem as DeviceInfo;
             if (selected == null) return;
+            ResetInstalledApps("目前操作手機已變更，請重新掃描應用程式。");
             settings.SelectedDeviceSerial = selected.Serial;
             SaveSettings();
             UpdateDeviceSelectionDetail();
             await LoadSelectedDeviceInformationCacheAsync();
             await RefreshDownloadCheckpointStatusAsync();
+            await RefreshSavedBrightnessCalibrationAsync();
         }
 
         private void DeviceInstallSelectionChanged(object sender, EventArgs e)
@@ -3427,6 +4654,7 @@ namespace AndroidADBTools
             string detail = all
                 ? "APK 安裝目標：全部 " + ready.Count + " 台　｜　其他功能：" + primary
                 : "目前操作：" + primary;
+            detail += AdbPortDisplaySuffix();
             SetDeviceDetail(detail, primary);
         }
 
@@ -4761,16 +5989,76 @@ namespace AndroidADBTools
         {
             List<ApkGroup> groups = new List<ApkGroup>(settings.Groups);
             groups.AddRange(folderGroups);
-            if (settings.GroupOrder == null || settings.GroupOrder.Count == 0) return groups;
-            Dictionary<string, int> order = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < settings.GroupOrder.Count; i++)
-                if (!String.IsNullOrWhiteSpace(settings.GroupOrder[i]) && !order.ContainsKey(settings.GroupOrder[i]))
-                    order[settings.GroupOrder[i]] = i;
-            return groups.OrderBy(delegate(ApkGroup group)
+            if (settings.GroupOrder != null && settings.GroupOrder.Count > 0)
             {
-                int index;
-                return order.TryGetValue(group.Id, out index) ? index : Int32.MaxValue;
-            }).ToList();
+                Dictionary<string, int> order = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < settings.GroupOrder.Count; i++)
+                    if (!String.IsNullOrWhiteSpace(settings.GroupOrder[i]) && !order.ContainsKey(settings.GroupOrder[i]))
+                        order[settings.GroupOrder[i]] = i;
+                groups = groups.OrderBy(delegate(ApkGroup group)
+                {
+                    int index;
+                    return order.TryGetValue(group.Id, out index) ? index : Int32.MaxValue;
+                }).ToList();
+            }
+            groups.Insert(0, CreateCuratedToolsGroup());
+            return groups;
+        }
+
+        private ApkGroup CreateCuratedToolsGroup()
+        {
+            ApkGroup group = new ApkGroup
+            {
+                Id = CuratedToolsGroupId,
+                Name = "阿輝自家工具"
+            };
+            foreach (CuratedToolDefinition tool in curatedTools)
+                group.Apks.Add(new ApkEntry(CuratedToolApkPath(tool)));
+            return group;
+        }
+
+        private static bool IsCuratedToolsGroup(ApkGroup group)
+        {
+            return group != null && String.Equals(group.Id, CuratedToolsGroupId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string CuratedToolApkPath(CuratedToolDefinition tool)
+        {
+            return Path.Combine(curatedToolsCacheFolder, tool.Repository + ".apk");
+        }
+
+        private string CuratedToolMetadataPath(CuratedToolDefinition tool)
+        {
+            return Path.Combine(curatedToolsCacheFolder, tool.Repository + ".json");
+        }
+
+        private CuratedToolDefinition CuratedToolForPath(string path)
+        {
+            return curatedTools.FirstOrDefault(delegate(CuratedToolDefinition tool)
+            {
+                return String.Equals(CuratedToolApkPath(tool), path, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private CuratedToolCacheInfo LoadCuratedToolCacheInfo(CuratedToolDefinition tool)
+        {
+            try
+            {
+                string path = CuratedToolMetadataPath(tool);
+                if (!File.Exists(path)) return null;
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                CuratedToolCacheInfo info = serializer.Deserialize<CuratedToolCacheInfo>(File.ReadAllText(path, Encoding.UTF8));
+                return info != null && String.Equals(info.repository, tool.Repository, StringComparison.OrdinalIgnoreCase)
+                    ? info : null;
+            }
+            catch { return null; }
+        }
+
+        private void SaveCuratedToolCacheInfo(CuratedToolDefinition tool, CuratedToolCacheInfo info)
+        {
+            Directory.CreateDirectory(curatedToolsCacheFolder);
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            File.WriteAllText(CuratedToolMetadataPath(tool), serializer.Serialize(info), new UTF8Encoding(false));
         }
 
         private void RefreshGroups(string selectId)
@@ -4829,24 +6117,58 @@ namespace AndroidADBTools
                 groupList.Invalidate();
             }
             groupTitle.Text = group.Name;
-            groupHint.Text = group.IsFolderGroup
-                ? group.Apks.Count + " 個安裝套件　｜　來源：APKs\\" + group.Name + "　｜　資料夾同步組合不可改名"
-                : group.Apks.Count + " 個安裝套件　｜　可拖放 APK／XAPK 到右側清單　｜　雙擊左側組合可編輯名稱";
-            foreach (ApkEntry entry in group.Apks)
+            bool curated = IsCuratedToolsGroup(group);
+            apkList.Columns[0].Text = curated ? "程式" : "安裝套件";
+            apkList.Columns[1].Text = curated ? "中文用途說明" : "位置";
+            groupHint.Text = curated
+                ? "下載／更新與安裝分開執行：先下載最新版 APK，再選取已下載的程式進行安裝"
+                : group.IsFolderGroup
+                ? group.Apks.Count + " 個安裝套件　｜　來源：APKs\\" + group.Name + "　｜　右鍵可快速安裝"
+                : group.Apks.Count + " 個安裝套件　｜　拖曳排序　｜　右鍵可快速安裝或移除";
+            if (curated)
             {
-                AddApkListItem(apkList, entry.Path, File.Exists(entry.Path) ? "等待安裝" : "檔案不存在");
+                foreach (CuratedToolDefinition tool in curatedTools)
+                    AddCuratedToolListItem(tool);
+            }
+            else
+            {
+                foreach (ApkEntry entry in group.Apks)
+                    AddApkListItem(apkList, entry.Path, File.Exists(entry.Path) ? "等待安裝" : "檔案不存在");
             }
             UpdateGroupActionButtons();
+        }
+
+        private ListViewItem AddCuratedToolListItem(CuratedToolDefinition tool)
+        {
+            string path = CuratedToolApkPath(tool);
+            CuratedToolCacheInfo info = LoadCuratedToolCacheInfo(tool);
+            string status = !File.Exists(path) ? "尚未下載" :
+                (info == null || String.IsNullOrWhiteSpace(info.tag_name) ? "已下載" : "已下載 " + info.tag_name);
+            ListViewItem item = AddApkListItem(apkList, path, status);
+            item.Text = tool.DisplayName;
+            item.SubItems[1].Text = tool.Description;
+            return item;
         }
 
         private void UpdateGroupActionButtons()
         {
             ApkGroup group = SelectedGroup();
-            bool editable = !busy && group != null && !group.IsFolderGroup;
+            bool curated = IsCuratedToolsGroup(group);
+            bool editable = !busy && group != null && !group.IsFolderGroup && !curated;
             if (renameGroupButton != null) renameGroupButton.Enabled = editable;
             if (deleteGroupButton != null) deleteGroupButton.Enabled = editable;
-            if (addGroupApksButton != null) addGroupApksButton.Enabled = editable;
-            if (removeGroupApkButton != null) removeGroupApkButton.Enabled = editable;
+            if (addGroupApksButton != null)
+            {
+                addGroupApksButton.Text = curated ? "下載／更新選取" : "加入套件";
+                addGroupApksButton.Enabled = !busy && group != null && (curated || editable);
+            }
+            if (removeGroupApkButton != null)
+            {
+                removeGroupApkButton.Visible = group != null && !group.IsFolderGroup && !curated;
+                removeGroupApkButton.Enabled = editable;
+            }
+            if (installGroupButton != null)
+                installGroupButton.Text = curated ? "安裝選取" : "全部安裝";
         }
 
         private void AddGroup(object sender, EventArgs e)
@@ -4865,7 +6187,7 @@ namespace AndroidADBTools
         private void RenameGroup(object sender, EventArgs e)
         {
             ApkGroup group = SelectedGroup();
-            if (group == null || group.IsFolderGroup) return;
+            if (group == null || group.IsFolderGroup || IsCuratedToolsGroup(group)) return;
             string name = Prompt("重新命名", "組合名稱", group.Name);
             if (String.IsNullOrWhiteSpace(name)) return;
             group.Name = name.Trim();
@@ -4876,7 +6198,7 @@ namespace AndroidADBTools
         private void DeleteGroup(object sender, EventArgs e)
         {
             ApkGroup group = SelectedGroup();
-            if (group == null || group.IsFolderGroup || busy) return;
+            if (group == null || group.IsFolderGroup || IsCuratedToolsGroup(group) || busy) return;
             if (MessageBox.Show(this, "確定刪除「" + group.Name + "」？\nAPK／XAPK 原始檔不會被刪除。", "刪除組合", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             settings.Groups.Remove(group);
             if (settings.GroupOrder != null) settings.GroupOrder.RemoveAll(delegate(string id) { return String.Equals(id, group.Id, StringComparison.OrdinalIgnoreCase); });
@@ -4887,7 +6209,7 @@ namespace AndroidADBTools
         private void AddApksToGroup(object sender, EventArgs e)
         {
             ApkGroup group = SelectedGroup();
-            if (group == null || group.IsFolderGroup)
+            if (group == null || group.IsFolderGroup || IsCuratedToolsGroup(group))
             {
                 MessageBox.Show(this, "請先建立一個安裝組合。", "尚無組合", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -4901,17 +6223,72 @@ namespace AndroidADBTools
         {
             e.Effect = DragDropEffects.None;
             ApkGroup group = SelectedGroup();
-            if (busy || group == null || group.IsFolderGroup || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            if (busy || group == null || group.IsFolderGroup || IsCuratedToolsGroup(group)) return;
+            if (e.Data.GetDataPresent(typeof(ApkListDragData)))
+            {
+                ApkListDragData drag = e.Data.GetData(typeof(ApkListDragData)) as ApkListDragData;
+                if (drag != null && String.Equals(drag.GroupId, group.Id, StringComparison.OrdinalIgnoreCase))
+                    e.Effect = DragDropEffects.Move;
+                return;
+            }
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
             if (files.Any(delegate(string f) { return File.Exists(f) && IsInstallPackageFile(f); }))
                 e.Effect = DragDropEffects.Copy;
         }
 
+        private void GroupApkDragOver(object sender, DragEventArgs e)
+        {
+            e.Effect = DragDropEffects.None;
+            ApkGroup group = SelectedGroup();
+            if (busy || group == null || group.IsFolderGroup || IsCuratedToolsGroup(group) || !e.Data.GetDataPresent(typeof(ApkListDragData)))
+            {
+                ClearApkListInsertionMark();
+                if (!busy && group != null && !group.IsFolderGroup && !IsCuratedToolsGroup(group) && e.Data.GetDataPresent(DataFormats.FileDrop))
+                    e.Effect = DragDropEffects.Copy;
+                return;
+            }
+            ApkListDragData drag = e.Data.GetData(typeof(ApkListDragData)) as ApkListDragData;
+            if (drag == null || !String.Equals(drag.GroupId, group.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearApkListInsertionMark();
+                return;
+            }
+            e.Effect = DragDropEffects.Move;
+            Point location = apkList.PointToClient(new Point(e.X, e.Y));
+            UpdateApkListInsertionMark(location);
+        }
+
         private void GroupApkDragDrop(object sender, DragEventArgs e)
         {
-            if (busy || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            ClearApkListInsertionMark();
+            if (busy) return;
             ApkGroup group = SelectedGroup();
-            if (group == null || group.IsFolderGroup) return;
+            if (group == null || group.IsFolderGroup || IsCuratedToolsGroup(group)) return;
+            if (e.Data.GetDataPresent(typeof(ApkListDragData)))
+            {
+                ApkListDragData drag = e.Data.GetData(typeof(ApkListDragData)) as ApkListDragData;
+                if (drag == null || !String.Equals(drag.GroupId, group.Id, StringComparison.OrdinalIgnoreCase) ||
+                    drag.SourceIndex < 0 || drag.SourceIndex >= group.Apks.Count) return;
+                Point location = apkList.PointToClient(new Point(e.X, e.Y));
+                int insertIndex = UpdateApkListInsertionMark(location);
+                ClearApkListInsertionMark();
+                ApkEntry moved = group.Apks[drag.SourceIndex];
+                group.Apks.RemoveAt(drag.SourceIndex);
+                if (insertIndex > drag.SourceIndex) insertIndex--;
+                insertIndex = Math.Max(0, Math.Min(insertIndex, group.Apks.Count));
+                group.Apks.Insert(insertIndex, moved);
+                SaveSettings();
+                RefreshGroups(group.Id);
+                if (insertIndex >= 0 && insertIndex < apkList.Items.Count)
+                {
+                    apkList.Items[insertIndex].Selected = true;
+                    apkList.Items[insertIndex].Focused = true;
+                    apkList.Items[insertIndex].EnsureVisible();
+                }
+                return;
+            }
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             string[] files = ((string[])e.Data.GetData(DataFormats.FileDrop))
                 .Where(delegate(string f) { return File.Exists(f) && IsInstallPackageFile(f); })
                 .ToArray();
@@ -4920,7 +6297,7 @@ namespace AndroidADBTools
 
         private void AddApksToGroup(ApkGroup group, IEnumerable<string> paths)
         {
-            if (group == null || group.IsFolderGroup) return;
+            if (group == null || group.IsFolderGroup || IsCuratedToolsGroup(group)) return;
             bool changed = false;
             foreach (string path in paths)
             {
@@ -4937,12 +6314,34 @@ namespace AndroidADBTools
         private void RemoveSelectedApks(object sender, EventArgs e)
         {
             ApkGroup group = SelectedGroup();
-            if (group == null || group.IsFolderGroup || busy || apkList.SelectedItems.Count == 0) return;
+            if (group == null || group.IsFolderGroup || IsCuratedToolsGroup(group) || busy || apkList.SelectedItems.Count == 0) return;
             List<string> paths = new List<string>();
             foreach (ListViewItem item in apkList.SelectedItems) paths.Add((string)item.Tag);
             group.Apks.RemoveAll(delegate(ApkEntry a) { return paths.Contains(a.Path); });
             SaveSettings();
             RefreshGroups(group.Id);
+        }
+
+        private async Task InstallSelectedApkItemsAsync()
+        {
+            if (busy || apkList.SelectedItems.Count == 0) return;
+            if (IsCuratedToolsGroup(SelectedGroup()))
+            {
+                await InstallSelectedCuratedToolsAsync(false);
+                return;
+            }
+            if (!await WaitForReadyDeviceAsync("常用程式安裝")) return;
+            List<Tuple<string, ListViewItem>> jobs = new List<Tuple<string, ListViewItem>>();
+            foreach (ListViewItem item in apkList.SelectedItems)
+            {
+                string path = item.Tag as string;
+                if (!String.IsNullOrWhiteSpace(path)) jobs.Add(Tuple.Create(path, item));
+            }
+            if (jobs.Count == 0) return;
+            string title = jobs.Count == 1
+                ? "快速安裝「" + Path.GetFileName(jobs[0].Item1) + "」"
+                : "快速安裝選取的 " + jobs.Count + " 個套件";
+            await InstallJobsAsync(jobs, title);
         }
 
         private string[] ChooseApkFiles()
@@ -5030,7 +6429,7 @@ namespace AndroidADBTools
                 if (File.Exists(full) && IsInstallPackageFile(full)) unique.Add(full);
             }
             if (unique.Count == 0) return;
-            if (!await EnsureReadyDeviceAsync()) return;
+            if (!await WaitForReadyDeviceAsync("快速安裝")) return;
             List<Tuple<string, ListViewItem>> jobs = new List<Tuple<string, ListViewItem>>();
             foreach (string path in unique) jobs.Add(Tuple.Create<string, ListViewItem>(path, null));
             quickInstalling = true;
@@ -5063,7 +6462,7 @@ namespace AndroidADBTools
                 }
             }
             if (unique.Count == 0) return;
-            if (!await EnsureReadyDeviceAsync()) return;
+            if (!await WaitForReadyDeviceAsync("快速傳輸")) return;
             DeviceInfo device = ReadyDevice();
             if (device == null) return;
 
@@ -6159,6 +7558,231 @@ namespace AndroidADBTools
             return false;
         }
 
+        private static string DeviceConnectionWaitMessage(bool adbAvailable, AdbResult result,
+            IEnumerable<DeviceInfo> foundDevices)
+        {
+            if (!adbAvailable)
+                return "找不到 adb.exe。請中止本次操作，先指定 Android Platform-Tools。";
+            if (result == null || !result.Started || result.ExitCode != 0)
+                return "ADB 暫時無法執行，程式會繼續重新檢查。" +
+                    (result == null ? "" : " " + ExplainAdbFailure(result));
+            List<DeviceInfo> found = (foundDevices ?? Enumerable.Empty<DeviceInfo>()).ToList();
+            int ready = found.Count(delegate(DeviceInfo device) { return device.State == "device"; });
+            if (ready > 0)
+                return ready == 1 ? "手機已正確連線，正在繼續原本操作..." :
+                    "已正確連線 " + ready + " 台手機，正在繼續原本操作...";
+            if (found.Any(delegate(DeviceInfo device) { return device.State == "unauthorized"; }))
+                return "已偵測到手機。請解鎖手機，並在 USB 偵錯授權視窗按「允許」。";
+            if (found.Any(delegate(DeviceInfo device) { return device.State == "offline"; }))
+                return "手機目前離線。請重新插拔 USB，或重新開啟 USB／無線偵錯。";
+            if (found.Count > 0)
+                return "已偵測到手機，但目前狀態尚未可操作，程式會繼續等待。";
+            return "尚未偵測到手機。請接上可傳輸資料的 USB 線並開啟 USB 偵錯。";
+        }
+
+        private static string DeviceConnectionSignature(IEnumerable<DeviceInfo> foundDevices)
+        {
+            return String.Join("|", (foundDevices ?? Enumerable.Empty<DeviceInfo>())
+                .OrderBy(delegate(DeviceInfo device) { return device.Serial; }, StringComparer.OrdinalIgnoreCase)
+                .Select(delegate(DeviceInfo device)
+                {
+                    return (device.Serial ?? "") + ":" + (device.State ?? "") + ":" + (device.Model ?? "");
+                }).ToArray());
+        }
+
+        private async Task<Tuple<bool, string>> ProbeReadyDeviceForOperationAsync()
+        {
+            string adb = FindAdb();
+            if (String.IsNullOrWhiteSpace(adb))
+            {
+                devices.Clear();
+                RefreshDeviceSelector(new List<DeviceInfo>());
+                adbStatusLabel.Text = "● 找不到 ADB";
+                adbStatusLabel.ForeColor = Red;
+                deviceStatusLabel.Text = "尚未安裝或指定 Android Platform Tools";
+                SetDeviceDetail("請中止本次操作後，按「選擇 adb.exe」指定檔案", null);
+                return Tuple.Create(false, DeviceConnectionWaitMessage(false, null, null));
+            }
+            if (!String.Equals(settings.AdbPath, adb, StringComparison.OrdinalIgnoreCase))
+            {
+                settings.AdbPath = adb;
+                SaveSettings();
+            }
+            AdbResult result;
+            try
+            {
+                result = await RunAdbAsync("devices -l");
+            }
+            catch (Exception ex)
+            {
+                result = new AdbResult { Started = false, ExitCode = -1, Error = ex.Message };
+            }
+            if (!result.Started || result.ExitCode != 0)
+            {
+                devices.Clear();
+                RefreshDeviceSelector(new List<DeviceInfo>());
+                adbStatusLabel.Text = "● ADB 執行失敗";
+                adbStatusLabel.ForeColor = Red;
+                deviceStatusLabel.Text = "正在等待 ADB 恢復...";
+                SetDeviceDetail(ExplainAdbFailure(result), null);
+                return Tuple.Create(false, DeviceConnectionWaitMessage(true, result, null));
+            }
+
+            List<DeviceInfo> found = ParseDevices(result.Output);
+            string previousSignature = DeviceConnectionSignature(devices);
+            string currentSignature = DeviceConnectionSignature(found);
+            devices = found;
+            adbStatusLabel.Text = "● ADB 已就緒";
+            adbStatusLabel.ForeColor = Green;
+            if (!String.Equals(previousSignature, currentSignature, StringComparison.Ordinal))
+                UpdateDeviceCard();
+            bool ready = ReadyDevice() != null;
+            return Tuple.Create(ready, DeviceConnectionWaitMessage(true, result, found));
+        }
+
+        private async Task<bool> WaitForReadyDeviceAsync(string operationName)
+        {
+            if (busy) return false;
+            bool previousBusy = busy;
+            busy = true;
+            SetInstallButtons(false);
+            try
+            {
+                Tuple<bool, string> initial = await ProbeReadyDeviceForOperationAsync();
+                if (initial.Item1) return true;
+
+                bool cancelRequested = false;
+                using (Form waitForm = new Form())
+                {
+                    float scale = Math.Max(1F, currentDpiScale);
+                    waitForm.Text = "等待手機連線";
+                    waitForm.StartPosition = FormStartPosition.CenterParent;
+                    waitForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+                    waitForm.MinimizeBox = false;
+                    waitForm.MaximizeBox = false;
+                    waitForm.ShowInTaskbar = false;
+                    waitForm.ClientSize = ScaleSize(new Size(520, 245), scale);
+                    waitForm.BackColor = Bg;
+                    waitForm.ForeColor = TextColor;
+                    waitForm.Font = Font;
+
+                    TableLayoutPanel layout = new TableLayoutPanel
+                    {
+                        Dock = DockStyle.Fill,
+                        ColumnCount = 1,
+                        RowCount = 5,
+                        Padding = ScalePadding(new Padding(24, 20, 24, 18), scale),
+                        BackColor = Bg
+                    };
+                    layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                    layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(38, scale)));
+                    layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(58, scale)));
+                    layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(28, scale)));
+                    layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                    layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleValue(46, scale)));
+
+                    Label title = new Label
+                    {
+                        Text = "「" + (String.IsNullOrWhiteSpace(operationName) ? "目前操作" : operationName) + "」正在等待手機",
+                        Dock = DockStyle.Fill,
+                        ForeColor = TextColor,
+                        Font = new Font(Font.FontFamily, 13F, FontStyle.Bold),
+                        TextAlign = ContentAlignment.MiddleLeft
+                    };
+                    Label status = new Label
+                    {
+                        Text = initial.Item2,
+                        Dock = DockStyle.Fill,
+                        ForeColor = Muted,
+                        TextAlign = ContentAlignment.MiddleLeft,
+                        AutoEllipsis = true
+                    };
+                    Label hint = new Label
+                    {
+                        Text = "程式每 2 秒自動重新檢查；連線並完成偵錯授權後會自動繼續。",
+                        Dock = DockStyle.Fill,
+                        ForeColor = Muted,
+                        Font = new Font(Font.FontFamily, 9F),
+                        TextAlign = ContentAlignment.MiddleLeft
+                    };
+                    ProgressBar progress = new ProgressBar
+                    {
+                        Dock = DockStyle.Top,
+                        Height = ScaleValue(8, scale),
+                        Style = ProgressBarStyle.Marquee,
+                        MarqueeAnimationSpeed = 28,
+                        Margin = ScalePadding(new Padding(0, 10, 0, 0), scale)
+                    };
+                    FlowLayoutPanel actions = new FlowLayoutPanel
+                    {
+                        Dock = DockStyle.Fill,
+                        FlowDirection = FlowDirection.RightToLeft,
+                        WrapContents = false,
+                        BackColor = Bg
+                    };
+                    Button cancel = NewButton("中止本次操作", false, 145);
+                    cancel.Size = ScaleSize(new Size(145, 36), scale);
+                    cancel.MinimumSize = ScaleSize(new Size(145, 36), scale);
+                    cancel.Click += delegate
+                    {
+                        cancelRequested = true;
+                        waitForm.DialogResult = DialogResult.Cancel;
+                        waitForm.Close();
+                    };
+                    actions.Controls.Add(cancel);
+                    layout.Controls.Add(title, 0, 0);
+                    layout.Controls.Add(status, 0, 1);
+                    layout.Controls.Add(hint, 0, 2);
+                    layout.Controls.Add(progress, 0, 3);
+                    layout.Controls.Add(actions, 0, 4);
+                    waitForm.Controls.Add(layout);
+                    waitForm.FormClosing += delegate(object sender, FormClosingEventArgs e)
+                    {
+                        if (waitForm.DialogResult != DialogResult.OK) cancelRequested = true;
+                    };
+                    waitForm.Shown += async delegate
+                    {
+                        while (!cancelRequested && !waitForm.IsDisposed)
+                        {
+                            Tuple<bool, string> probe = await ProbeReadyDeviceForOperationAsync();
+                            if (cancelRequested || waitForm.IsDisposed) break;
+                            status.Text = probe.Item2;
+                            status.ForeColor = probe.Item1 ? Green : Muted;
+                            if (probe.Item1)
+                            {
+                                progress.Style = ProgressBarStyle.Blocks;
+                                progress.Value = 100;
+                                await Task.Delay(250);
+                                if (!waitForm.IsDisposed)
+                                {
+                                    waitForm.DialogResult = DialogResult.OK;
+                                    waitForm.Close();
+                                }
+                                break;
+                            }
+                            await Task.Delay(2000);
+                        }
+                    };
+                    ApplySmoothTextRendering(waitForm);
+                    DialogResult waitResult = waitForm.ShowDialog(this);
+                    if (waitResult == DialogResult.OK && ReadyDevice() != null)
+                    {
+                        Log((String.IsNullOrWhiteSpace(operationName) ? "操作" : operationName) +
+                            "：手機連線已就緒，自動繼續。");
+                        return true;
+                    }
+                }
+                Log((String.IsNullOrWhiteSpace(operationName) ? "操作" : operationName) +
+                    "：使用者已中止等待手機連線。");
+                return false;
+            }
+            finally
+            {
+                busy = previousBusy;
+                SetInstallButtons(!busy);
+            }
+        }
+
         private void BrowseSpotread(object sender, EventArgs e)
         {
             using (OpenFileDialog dialog = new OpenFileDialog())
@@ -6532,16 +8156,8 @@ namespace AndroidADBTools
             if (!await EnsureReadyDeviceAsync()) return;
             DeviceInfo device = ReadyDevice();
             if (device == null) return;
+            DownloadDeviceIdentity deviceIdentity = null;
             string prefix = "-s " + Quote(device.Serial) + " shell ";
-            AdbResult currentResult = await RunAdbAsync(prefix + "settings get system screen_brightness");
-            int current;
-            if (!AdbCommandSucceeded(currentResult) || !Int32.TryParse(FirstOutputLine(currentResult.Output), out current))
-            {
-                MessageBox.Show(this, "無法讀取手機目前亮度，不能開始自動調整。", "亮度讀取失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            Tuple<int, bool, string> maximumInfo = await DetectBrightnessMaximumAsync(prefix, current);
-            SetBrightnessMaximum(maximumInfo.Item1);
             double target = (double)autoBrightnessTargetNumber.Value;
             double tolerance = (double)autoBrightnessToleranceNumber.Value;
             settings.SpotreadPath = spotread;
@@ -6559,20 +8175,33 @@ namespace AndroidADBTools
             startAutoBrightnessButton.Enabled = true;
             startAutoBrightnessButton.Text = "取消自動調整";
             autoBrightnessProgressBar.Value = 0;
-            autoBrightnessStatusLabel.Text = "正在準備白色測試畫面與手動亮度模式…";
+            pendingBrightnessCalibration = null;
+            if (saveBrightnessCalibrationButton != null) saveBrightnessCalibrationButton.Enabled = false;
+            autoBrightnessStatusLabel.Text = "正在關閉設備自動亮度，並確認手動亮度模式…";
             autoBrightnessStatusLabel.ForeColor = Color.FromArgb(255, 190, 75);
             bool converged = false;
             bool measurementFailed = false;
-            int bestValue = Math.Max(1, Math.Min(brightnessDetectedMaximum, current));
+            int bestValue = 1;
             double bestNit = Double.NaN;
             double bestError = Double.MaxValue;
             int iteration = 0;
             try
             {
+                Tuple<bool, string> manualMode = await DisableAutomaticBrightnessAsync(device);
+                if (!manualMode.Item1)
+                    throw new InvalidOperationException("校正前無法確認手機已關閉自動亮度：" + manualMode.Item2);
+                brightnessStatusLabel.Text = "已確認設備自動亮度關閉；正在準備校正。";
+                brightnessStatusLabel.ForeColor = Green;
+                deviceIdentity = await ReadDownloadDeviceIdentityAsync(device);
+                AdbResult currentResult = await RunAdbAsync(prefix + "settings get system screen_brightness");
+                int current;
+                if (!AdbCommandSucceeded(currentResult) || !Int32.TryParse(FirstOutputLine(currentResult.Output), out current))
+                    throw new InvalidOperationException("無法讀取手機目前亮度，不能開始自動調整。");
+                Tuple<int, bool, string> maximumInfo = await DetectBrightnessMaximumAsync(prefix, current);
+                SetBrightnessMaximum(maximumInfo.Item1);
+                bestValue = Math.Max(1, Math.Min(brightnessDetectedMaximum, current));
+                autoBrightnessStatusLabel.Text = "自動亮度已關閉，正在準備白色測試畫面…";
                 await OpenWhitePatternOnPhoneAsync(device, false);
-                AdbResult mode = await RunAdbAsync(prefix + "settings put system screen_brightness_mode 0");
-                if (!AdbCommandSucceeded(mode)) throw new InvalidOperationException("無法關閉手機自動亮度：" + CleanOutput((mode.Output ?? "") + " " + (mode.Error ?? "")));
-                brightnessAutoMode = false;
                 await Task.Delay(1800);
 
                 int low = 1;
@@ -6636,8 +8265,29 @@ namespace AndroidADBTools
                 }
                 else if (converged)
                 {
+                    pendingBrightnessCalibration = new BrightnessCalibrationRecord
+                    {
+                        DeviceKey = deviceIdentity.Key,
+                        DeviceSerial = device.Serial ?? "",
+                        DeviceModel = deviceIdentity.Model,
+                        BrightnessValue = bestValue,
+                        BrightnessMaximum = brightnessDetectedMaximum,
+                        TargetNit = (decimal)target,
+                        MeasuredNit = (decimal)bestNit,
+                        SavedAt = DateTime.Now
+                    };
+                    bool savedToTestTools = await SaveBrightnessCalibrationToTestToolsAsync(
+                        device, bestValue, brightnessDetectedMaximum, target, bestNit);
+                    if (saveBrightnessCalibrationButton != null) saveBrightnessCalibrationButton.Enabled = true;
+                    if (savedBrightnessCalibrationLabel != null)
+                    {
+                        savedBrightnessCalibrationLabel.Text = "校正成功；可儲存 " + bestValue + " / " + brightnessDetectedMaximum +
+                            "（實測 " + bestNit.ToString("0.0", CultureInfo.CurrentCulture) + " nit）。";
+                        savedBrightnessCalibrationLabel.ForeColor = Green;
+                    }
                     autoBrightnessStatusLabel.Text = "校準完成：" + bestNit.ToString("0.0", CultureInfo.CurrentCulture) + " nit，Android 亮度 " + bestValue +
-                        "，誤差 " + bestError.ToString("0.0", CultureInfo.CurrentCulture) + " nit。";
+                        "，誤差 " + bestError.ToString("0.0", CultureInfo.CurrentCulture) + " nit。" +
+                        (savedToTestTools ? " 已同步至 TestTools 亮度快速紀錄。" : " TestTools 未安裝或版本不支援，未同步紀錄。");
                     autoBrightnessStatusLabel.ForeColor = Green;
                     brightnessStatusLabel.Text = "全自動校準：Android 亮度 " + bestValue + "，實測 " + bestNit.ToString("0.0", CultureInfo.CurrentCulture) + " nit";
                     brightnessStatusLabel.ForeColor = Green;
@@ -6675,6 +8325,36 @@ namespace AndroidADBTools
             }
         }
 
+        private async Task<bool> SaveBrightnessCalibrationToTestToolsAsync(
+            DeviceInfo device, int value, int maximum, double targetNit, double measuredNit)
+        {
+            if (device == null || String.IsNullOrWhiteSpace(device.Serial)) return false;
+            string command = "-s " + Quote(device.Serial) + " shell am broadcast" +
+                " -a tw.chehu.testtools.action.SAVE_BRIGHTNESS_PRESET" +
+                " -n tw.chehu.testtools/.BrightnessPresetReceiver" +
+                " --ei brightness_value " + value.ToString(CultureInfo.InvariantCulture) +
+                " --ei brightness_maximum " + maximum.ToString(CultureInfo.InvariantCulture) +
+                " --ef target_nit " + targetNit.ToString("0.###", CultureInfo.InvariantCulture) +
+                " --ef measured_nit " + measuredNit.ToString("0.###", CultureInfo.InvariantCulture);
+            try
+            {
+                AdbResult result = await RunAdbAsync(command);
+                string output = (result.Output ?? "") + "\n" + (result.Error ?? "");
+                bool saved = AdbCommandSucceeded(result) &&
+                    output.IndexOf("result=-1", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    output.IndexOf("SAVED", StringComparison.OrdinalIgnoreCase) >= 0;
+                Log(saved
+                    ? "已將自動校正結果同步至 TestTools 亮度快速紀錄。"
+                    : "未同步至 TestTools：" + ShortStatus(CleanOutput(output), 220));
+                return saved;
+            }
+            catch (Exception ex)
+            {
+                Log("未同步至 TestTools：" + ex.Message);
+                return false;
+            }
+        }
+
         private void SetAutoBrightnessUi(bool enabled)
         {
             if (spotreadPathTextBox != null) spotreadPathTextBox.Enabled = enabled;
@@ -6685,6 +8365,31 @@ namespace AndroidADBTools
             if (openWhitePatternButton != null) openWhitePatternButton.Enabled = enabled;
             if (autoBrightnessTargetNumber != null) autoBrightnessTargetNumber.Enabled = enabled;
             if (autoBrightnessToleranceNumber != null) autoBrightnessToleranceNumber.Enabled = enabled;
+            if (saveBrightnessCalibrationButton != null) saveBrightnessCalibrationButton.Enabled = enabled && pendingBrightnessCalibration != null;
+            if (applySavedBrightnessCalibrationButton != null) applySavedBrightnessCalibrationButton.Enabled = enabled && currentBrightnessCalibration != null;
+        }
+
+        private async Task<Tuple<bool, string>> DisableAutomaticBrightnessAsync(DeviceInfo device)
+        {
+            if (device == null) return Tuple.Create(false, "找不到可操作的手機。");
+            string prefix = "-s " + Quote(device.Serial) + " shell ";
+            AdbResult setMode = await RunAdbAsync(prefix + "settings put system screen_brightness_mode 0");
+            if (!AdbCommandSucceeded(setMode))
+                return Tuple.Create(false, CleanOutput((setMode.Output ?? "") + " " + (setMode.Error ?? "")));
+
+            AdbResult readMode = await RunAdbAsync(prefix + "settings get system screen_brightness_mode");
+            string value = FirstOutputLine(readMode.Output);
+            if (!AdbCommandSucceeded(readMode) || value != "0")
+            {
+                string detail = CleanOutput((readMode.Output ?? "") + " " + (readMode.Error ?? ""));
+                if (String.IsNullOrWhiteSpace(detail)) detail = "手機未回傳可確認的亮度模式。";
+                else detail = "讀回值為「" + value + "」；" + detail;
+                return Tuple.Create(false, detail);
+            }
+
+            brightnessAutoMode = false;
+            Log("已關閉並確認設備自動亮度，接著才開始亮度校正或套用。 ");
+            return Tuple.Create(true, "已確認自動亮度關閉");
         }
 
         private static string ShortStatus(string text, int maximum)
@@ -6911,36 +8616,104 @@ namespace AndroidADBTools
             SetInstallButtons(true);
         }
 
-        private async Task SetMediaVolumeExtremeAsync(bool maximum)
+        private static bool TryParseMediaVolumeRange(string text, out int current, out int minimum, out int maximum)
+        {
+            current = 0;
+            minimum = 0;
+            maximum = 0;
+            MatchCollection matches = Regex.Matches(text ?? "",
+                @"volume\s+is\s+(-?\d+)\s+in\s+range\s*\[\s*(-?\d+)\s*\.\.\s*(-?\d+)\s*\]",
+                RegexOptions.IgnoreCase);
+            if (matches.Count == 0) return false;
+            Match match = matches[matches.Count - 1];
+            return Int32.TryParse(match.Groups[1].Value, out current) &&
+                Int32.TryParse(match.Groups[2].Value, out minimum) &&
+                Int32.TryParse(match.Groups[3].Value, out maximum) && maximum >= minimum;
+        }
+
+        private static int CalculateMediaVolumeIndex(int minimum, int maximum, int percentage)
+        {
+            percentage = Math.Max(0, Math.Min(100, percentage));
+            return minimum + (int)Math.Round((maximum - minimum) * percentage / 100D,
+                MidpointRounding.AwayFromZero);
+        }
+
+        private async Task SetMediaVolumeAsync(int percentage)
         {
             if (busy) return;
             if (!await EnsureReadyDeviceAsync()) return;
             DeviceInfo device = ReadyDevice();
             if (device == null) return;
+            percentage = Math.Max(0, Math.Min(100, percentage));
+            string targetDescription = percentage == 0 ? "最低" : (percentage == 100 ? "最高" : percentage + "%");
             busy = true;
             SetInstallButtons(false);
-            Log("正在將手機媒體音量調到" + (maximum ? "最高" : "最低") + "。");
-            AdbResult result = await RunAdbAsync("-s " + Quote(device.Serial) + " shell cmd media_session volume --stream 3 --set " + (maximum ? "1000" : "0"));
-            string combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
-            bool ok = AdbCommandSucceeded(result) && combined.IndexOf("Error", StringComparison.OrdinalIgnoreCase) < 0 &&
-                combined.IndexOf("Unknown", StringComparison.OrdinalIgnoreCase) < 0;
-            if (!ok)
+            Log("正在將手機媒體音量調到" + targetDescription + "。");
+            AdbResult result = null;
+            bool ok = false;
+            string detail = "";
+            int targetIndex = -1;
+            try
             {
-                string keyCode = maximum ? "24" : "25";
-                string remoteCommand = String.Join("; ", Enumerable.Repeat("input keyevent " + keyCode, 40).ToArray());
-                result = await RunAdbAsync("-s " + Quote(device.Serial) + " shell " + Quote(remoteCommand));
-                ok = AdbCommandSucceeded(result);
+                string serial = "-s " + Quote(device.Serial) + " shell ";
+                string volumeCommand = "cmd media_session volume";
+                result = await RunAdbAsync(serial + volumeCommand + " --stream 3 --get");
+                string combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
+                int current;
+                int minimum;
+                int maximum;
+                bool hasRange = TryParseMediaVolumeRange(combined, out current, out minimum, out maximum);
+                if (!hasRange)
+                {
+                    volumeCommand = "media volume";
+                    result = await RunAdbAsync(serial + volumeCommand + " --stream 3 --get");
+                    combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
+                    hasRange = TryParseMediaVolumeRange(combined, out current, out minimum, out maximum);
+                }
+
+                if (hasRange)
+                {
+                    targetIndex = CalculateMediaVolumeIndex(minimum, maximum, percentage);
+                    result = await RunAdbAsync(serial + volumeCommand + " --stream 3 --set " + targetIndex + " --get");
+                    combined = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
+                    int confirmedIndex;
+                    int confirmedMinimum;
+                    int confirmedMaximum;
+                    bool confirmed = TryParseMediaVolumeRange(combined, out confirmedIndex,
+                        out confirmedMinimum, out confirmedMaximum);
+                    ok = AdbCommandSucceeded(result) && confirmed && confirmedIndex == targetIndex;
+                    detail = combined;
+                    if (ok) Log("手機媒體音量範圍 " + minimum + "–" + maximum + "，已設定為 " + targetIndex + "。");
+                }
+                else if (percentage == 0 || percentage == 100)
+                {
+                    string keyCode = percentage == 100 ? "24" : "25";
+                    string remoteCommand = String.Join("; ", Enumerable.Repeat("input keyevent " + keyCode, 40).ToArray());
+                    result = await RunAdbAsync(serial + Quote(remoteCommand));
+                    ok = AdbCommandSucceeded(result);
+                    detail = ((result.Output ?? "") + " " + (result.Error ?? "")).Trim();
+                }
+                else
+                {
+                    detail = "手機未回傳媒體音量的最小值與最大值，無法準確計算 50%。";
+                }
             }
-            busy = false;
-            SetInstallButtons(true);
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+            }
             if (ok)
             {
-                Log("媒體音量已調到" + (maximum ? "最高" : "最低") + "。");
-                MessageBox.Show(this, "媒體音量已調到" + (maximum ? "最高。" : "最低。"), "音量調整", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log("媒體音量已調到" + targetDescription + "。");
+                MessageBox.Show(this, "媒體音量已調到" + targetDescription +
+                    (targetIndex >= 0 ? "（音量級數 " + targetIndex + "）。" : "。"),
+                    "音量調整", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {
-                string detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
+                if (String.IsNullOrWhiteSpace(detail) && result != null)
+                    detail = CleanOutput((result.Output ?? "") + " " + (result.Error ?? ""));
                 Log("媒體音量調整失敗：" + detail);
                 MessageBox.Show(this, "無法調整手機媒體音量。\n\n" + detail, "音量調整失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -7144,6 +8917,163 @@ namespace AndroidADBTools
                 Model = model,
                 Key = (model + "|" + stableId.Trim()).ToUpperInvariant()
             };
+        }
+
+        private BrightnessCalibrationRecord FindBrightnessCalibration(DownloadDeviceIdentity identity)
+        {
+            if (identity == null || settings.BrightnessCalibrations == null) return null;
+            return settings.BrightnessCalibrations
+                .Where(delegate(BrightnessCalibrationRecord record)
+                {
+                    return record != null && String.Equals(record.DeviceKey, identity.Key, StringComparison.OrdinalIgnoreCase);
+                })
+                .OrderByDescending(delegate(BrightnessCalibrationRecord record) { return record.SavedAt; })
+                .FirstOrDefault();
+        }
+
+        private void StoreBrightnessCalibration(BrightnessCalibrationRecord record)
+        {
+            if (record == null || String.IsNullOrWhiteSpace(record.DeviceKey)) return;
+            if (settings.BrightnessCalibrations == null) settings.BrightnessCalibrations = new List<BrightnessCalibrationRecord>();
+            settings.BrightnessCalibrations.RemoveAll(delegate(BrightnessCalibrationRecord existing)
+            {
+                return existing != null && String.Equals(existing.DeviceKey, record.DeviceKey, StringComparison.OrdinalIgnoreCase);
+            });
+            settings.BrightnessCalibrations.Add(record);
+            SaveSettings();
+        }
+
+        private async Task RefreshSavedBrightnessCalibrationAsync()
+        {
+            if (savedBrightnessCalibrationLabel == null) return;
+            pendingBrightnessCalibration = null;
+            if (saveBrightnessCalibrationButton != null) saveBrightnessCalibrationButton.Enabled = false;
+            currentBrightnessCalibration = null;
+            if (applySavedBrightnessCalibrationButton != null) applySavedBrightnessCalibrationButton.Enabled = false;
+
+            DeviceInfo device = ReadyDevice();
+            if (device == null)
+            {
+                savedBrightnessCalibrationLabel.Text = "尚未連接可操作的手機，無法載入亮度校正結果。";
+                savedBrightnessCalibrationLabel.ForeColor = Muted;
+                return;
+            }
+
+            try
+            {
+                savedBrightnessCalibrationLabel.Text = "正在識別手機與亮度校正紀錄…";
+                savedBrightnessCalibrationLabel.ForeColor = Muted;
+                DownloadDeviceIdentity identity = await ReadDownloadDeviceIdentityAsync(device);
+                currentBrightnessCalibration = FindBrightnessCalibration(identity);
+                if (currentBrightnessCalibration == null)
+                {
+                    savedBrightnessCalibrationLabel.Text = identity.Model + "：尚無已儲存的亮度校正結果。";
+                    return;
+                }
+
+                BrightnessCalibrationRecord record = currentBrightnessCalibration;
+                savedBrightnessCalibrationLabel.Text = identity.Model + "：已存 " + record.TargetNit.ToString("0.0") + " nit → " +
+                    record.BrightnessValue + " / " + Math.Max(1, record.BrightnessMaximum) + "（實測 " +
+                    record.MeasuredNit.ToString("0.0") + " nit，" + record.SavedAt.ToString("yyyy/MM/dd HH:mm") + "）。";
+                savedBrightnessCalibrationLabel.ForeColor = Green;
+                if (applySavedBrightnessCalibrationButton != null) applySavedBrightnessCalibrationButton.Enabled = !busy;
+            }
+            catch (Exception ex)
+            {
+                savedBrightnessCalibrationLabel.Text = "無法讀取目前手機的亮度校正紀錄。";
+                savedBrightnessCalibrationLabel.ForeColor = Red;
+                Log("讀取亮度校正紀錄失敗：" + ex.Message);
+            }
+        }
+
+        private async Task SavePendingBrightnessCalibrationAsync()
+        {
+            if (busy || pendingBrightnessCalibration == null) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+            DownloadDeviceIdentity identity = await ReadDownloadDeviceIdentityAsync(device);
+            if (!String.Equals(identity.Key, pendingBrightnessCalibration.DeviceKey, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(this, "目前連接的手機不是剛才完成校正的手機，因此沒有儲存結果。", "手機已變更",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            pendingBrightnessCalibration.SavedAt = DateTime.Now;
+            StoreBrightnessCalibration(pendingBrightnessCalibration);
+            Log("已儲存 " + identity.Model + " 的亮度校正結果：Android=" + pendingBrightnessCalibration.BrightnessValue +
+                "，實測=" + pendingBrightnessCalibration.MeasuredNit.ToString("0.0", CultureInfo.InvariantCulture) + " nit。");
+            pendingBrightnessCalibration = null;
+            await RefreshSavedBrightnessCalibrationAsync();
+        }
+
+        private async Task ApplySavedBrightnessCalibrationAsync()
+        {
+            if (busy || brightnessApplying) return;
+            if (!await EnsureReadyDeviceAsync()) return;
+            DeviceInfo device = ReadyDevice();
+            if (device == null) return;
+
+            busy = true;
+            brightnessApplying = true;
+            SetInstallButtons(false);
+            SetAutoBrightnessUi(false);
+            try
+            {
+                DownloadDeviceIdentity identity = await ReadDownloadDeviceIdentityAsync(device);
+                BrightnessCalibrationRecord record = FindBrightnessCalibration(identity);
+                if (record == null) throw new InvalidOperationException("目前手機沒有已儲存的亮度校正結果。");
+
+                string prefix = "-s " + Quote(device.Serial) + " shell ";
+                AdbResult currentResult = await RunAdbAsync(prefix + "settings get system screen_brightness");
+                int currentValue;
+                if (!AdbCommandSucceeded(currentResult) || !Int32.TryParse(FirstOutputLine(currentResult.Output), out currentValue))
+                    throw new InvalidOperationException("無法讀取手機目前亮度。");
+                Tuple<int, bool, string> maximumInfo = await DetectBrightnessMaximumAsync(prefix, currentValue);
+                SetBrightnessMaximum(maximumInfo.Item1);
+
+                Tuple<bool, string> manualMode = await DisableAutomaticBrightnessAsync(device);
+                if (!manualMode.Item1) throw new InvalidOperationException("無法確認手機已關閉自動亮度：" + manualMode.Item2);
+
+                int value = Math.Max(0, Math.Min(brightnessDetectedMaximum, record.BrightnessValue));
+                AdbResult apply = await RunAdbAsync(prefix + "settings put system screen_brightness " + value);
+                if (!AdbCommandSucceeded(apply))
+                    throw new InvalidOperationException("套用已儲存亮度失敗：" + CleanOutput((apply.Output ?? "") + " " + (apply.Error ?? "")));
+                AdbResult verify = await RunAdbAsync(prefix + "settings get system screen_brightness");
+                int verifiedValue;
+                if (!AdbCommandSucceeded(verify) || !Int32.TryParse(FirstOutputLine(verify.Output), out verifiedValue))
+                    throw new InvalidOperationException("亮度指令已送出，但無法讀回確認套用結果。");
+
+                SetBrightnessControls(Math.Max(0, Math.Min(brightnessDetectedMaximum, verifiedValue)), false);
+                brightnessLastApplied = verifiedValue;
+                autoBrightnessTargetNumber.Value = Math.Max(autoBrightnessTargetNumber.Minimum,
+                    Math.Min(autoBrightnessTargetNumber.Maximum, record.TargetNit));
+                autoBrightnessProgressBar.Value = 0;
+                autoBrightnessReadingLabel.Text = "已載入先前實測 " + record.MeasuredNit.ToString("0.0") +
+                    " nit；本次未重新量測。";
+                autoBrightnessReadingLabel.ForeColor = Green;
+                autoBrightnessStatusLabel.Text = "已快速套用 " + verifiedValue + " / " + brightnessDetectedMaximum +
+                    "（原校正目標 " + record.TargetNit.ToString("0.0") + " nit）。";
+                autoBrightnessStatusLabel.ForeColor = Green;
+                brightnessStatusLabel.Text = "已套用保存亮度 " + verifiedValue + " / " + brightnessDetectedMaximum + "；手動亮度";
+                brightnessStatusLabel.ForeColor = Green;
+                Log("已快速套用 " + identity.Model + " 的已儲存亮度：Android=" + verifiedValue + "，未重新量測。");
+            }
+            catch (Exception ex)
+            {
+                autoBrightnessStatusLabel.Text = "快速套用失敗：" + ShortStatus(ex.Message, 300);
+                autoBrightnessStatusLabel.ForeColor = Red;
+                Log("快速套用已儲存亮度失敗：" + ex.Message);
+                MessageBox.Show(this, ex.Message, "快速套用失敗", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                busy = false;
+                brightnessApplying = false;
+                SetInstallButtons(true);
+                SetAutoBrightnessUi(true);
+            }
         }
 
         private async Task RefreshDownloadCheckpointStatusAsync()
@@ -7862,16 +9792,217 @@ namespace AndroidADBTools
             return Math.Max(1, milliseconds / 1000) + " 秒";
         }
 
+        private List<CuratedToolDefinition> SelectedCuratedTools(bool all)
+        {
+            if (all) return new List<CuratedToolDefinition>(curatedTools);
+            List<CuratedToolDefinition> selected = new List<CuratedToolDefinition>();
+            foreach (ListViewItem item in apkList.SelectedItems)
+            {
+                CuratedToolDefinition tool = CuratedToolForPath(item.Tag as string);
+                if (tool != null && !selected.Contains(tool)) selected.Add(tool);
+            }
+            return selected;
+        }
+
+        private ListViewItem CuratedToolListItem(CuratedToolDefinition tool)
+        {
+            string path = CuratedToolApkPath(tool);
+            return apkList.Items.Cast<ListViewItem>().FirstOrDefault(delegate(ListViewItem item)
+            {
+                return String.Equals(item.Tag as string, path, StringComparison.OrdinalIgnoreCase);
+            });
+        }
+
+        private async Task<Tuple<GithubReleaseInfo, GithubReleaseAsset>> QueryLatestCuratedToolReleaseAsync(
+            CuratedToolDefinition tool)
+        {
+            Uri apiUri = new Uri("https://api.github.com/repos/ahui3c/" + tool.Repository + "/releases/latest");
+            GithubReleaseInfo release;
+            using (WebClient client = CreateGithubWebClient())
+            {
+                string json = await client.DownloadStringTaskAsync(apiUri);
+                JavaScriptSerializer serializer = new JavaScriptSerializer { MaxJsonLength = Int32.MaxValue };
+                release = serializer.Deserialize<GithubReleaseInfo>(json);
+            }
+            if (release == null || release.draft || release.prerelease || String.IsNullOrWhiteSpace(release.tag_name))
+                throw new InvalidDataException("GitHub 沒有回傳可用的正式版本。");
+            List<GithubReleaseAsset> apkAssets = (release.assets ?? new List<GithubReleaseAsset>())
+                .Where(delegate(GithubReleaseAsset asset)
+                {
+                    return asset != null && (asset.name ?? "").EndsWith(".apk", StringComparison.OrdinalIgnoreCase) &&
+                        !String.IsNullOrWhiteSpace(asset.browser_download_url);
+                }).ToList();
+            if (apkAssets.Count == 0) throw new InvalidDataException("最新 Release 沒有提供 APK 檔案。");
+            GithubReleaseAsset selected = apkAssets.OrderByDescending(delegate(GithubReleaseAsset asset)
+            {
+                return asset.size;
+            }).First();
+            Uri downloadUri = new Uri(selected.browser_download_url);
+            if (!String.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !String.Equals(downloadUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("GitHub 回傳了非預期的 APK 下載網址。");
+            if (selected.size <= 0 || selected.size > 250L * 1024L * 1024L)
+                throw new InvalidDataException("APK 檔案大小不合理，已取消下載。");
+            if (ReleaseAssetSha256(selected.digest).Length != 64)
+                throw new InvalidDataException("最新 APK 沒有 GitHub 提供的 SHA-256，已取消下載。");
+            return Tuple.Create(release, selected);
+        }
+
+        private async Task DownloadCuratedToolReleaseAsync(CuratedToolDefinition tool,
+            GithubReleaseInfo release, GithubReleaseAsset asset)
+        {
+            byte[] data;
+            using (WebClient client = CreateGithubWebClient())
+                data = await client.DownloadDataTaskAsync(new Uri(asset.browser_download_url));
+            if (data == null || data.LongLength != asset.size || data.Length < 4 ||
+                data[0] != (byte)'P' || data[1] != (byte)'K')
+                throw new InvalidDataException("下載內容不完整或不是有效的 APK 檔案。");
+            string expectedSha256 = ReleaseAssetSha256(asset.digest);
+            if (expectedSha256.Length == 64)
+            {
+                string actualSha256 = ComputeSha256(data);
+                if (!String.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("APK 的 SHA-256 驗證失敗。");
+            }
+
+            Directory.CreateDirectory(curatedToolsCacheFolder);
+            string targetPath = CuratedToolApkPath(tool);
+            string temporaryPath = targetPath + ".download-" + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllBytes(temporaryPath, data);
+                if (File.Exists(targetPath)) File.Replace(temporaryPath, targetPath, null);
+                else File.Move(temporaryPath, targetPath);
+                SaveCuratedToolCacheInfo(tool, new CuratedToolCacheInfo
+                {
+                    repository = tool.Repository,
+                    tag_name = release.tag_name,
+                    asset_name = asset.name,
+                    downloaded_at = DateTime.Now
+                });
+            }
+            finally
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+            }
+        }
+
+        private async Task DownloadOrUpdateCuratedToolsAsync(bool all)
+        {
+            if (busy || !IsCuratedToolsGroup(SelectedGroup())) return;
+            List<CuratedToolDefinition> tools = SelectedCuratedTools(all);
+            if (tools.Count == 0)
+            {
+                MessageBox.Show(this, "請先選取要下載、更新或安裝的工具。", "阿輝自家工具",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            List<string> failures = new List<string>();
+            int downloaded = 0;
+            int current = 0;
+            busy = true;
+            SetInstallButtons(false);
+            try
+            {
+                foreach (CuratedToolDefinition tool in tools)
+                {
+                    current++;
+                    ListViewItem item = CuratedToolListItem(tool);
+                    try
+                    {
+                        SetItemStatus(item, "查詢最新版 " + current + "/" + tools.Count + "...", Color.FromArgb(191, 128, 31));
+                        Tuple<GithubReleaseInfo, GithubReleaseAsset> latest = await QueryLatestCuratedToolReleaseAsync(tool);
+                        CuratedToolCacheInfo cached = LoadCuratedToolCacheInfo(tool);
+                        string localPath = CuratedToolApkPath(tool);
+                        bool isLatest = File.Exists(localPath) && cached != null &&
+                            String.Equals(cached.tag_name, latest.Item1.tag_name, StringComparison.OrdinalIgnoreCase) &&
+                            String.Equals(cached.asset_name, latest.Item2.name, StringComparison.OrdinalIgnoreCase);
+                        if (!isLatest)
+                        {
+                            SetItemStatus(item, "下載 " + latest.Item1.tag_name + "...", Color.FromArgb(191, 128, 31));
+                            await DownloadCuratedToolReleaseAsync(tool, latest.Item1, latest.Item2);
+                            downloaded++;
+                        }
+                        SetItemStatus(item, "最新版 " + latest.Item1.tag_name, Green);
+                        Log("阿輝自家工具：" + tool.DisplayName + " 已就緒（" + latest.Item1.tag_name + "）。");
+                    }
+                    catch (Exception ex)
+                    {
+                        SetItemStatus(item, "下載失敗", Red);
+                        failures.Add(tool.DisplayName + "：" + ex.Message);
+                        Log("阿輝自家工具下載失敗：" + tool.Repository + " / " + ex);
+                    }
+                }
+            }
+            finally
+            {
+                busy = false;
+                SetInstallButtons(true);
+            }
+            if (failures.Count > 0)
+            {
+                MessageBox.Show(this, "以下工具未能取得最新版：\n\n" + String.Join("\n", failures.ToArray()),
+                    "阿輝自家工具", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else
+            {
+                MessageBox.Show(this, downloaded > 0
+                    ? "已下載或更新 " + downloaded + " 個工具。\n\n如要安裝，請選取已下載的程式後按「安裝選取」。"
+                    : "選取的工具都已是最新公開版本。",
+                    "阿輝自家工具", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private async Task InstallSelectedCuratedToolsAsync(bool all)
+        {
+            if (busy || !IsCuratedToolsGroup(SelectedGroup())) return;
+            List<CuratedToolDefinition> tools = SelectedCuratedTools(all);
+            if (tools.Count == 0)
+            {
+                MessageBox.Show(this, "請先選取要安裝的工具。", "阿輝自家工具",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            List<CuratedToolDefinition> missing = tools.Where(delegate(CuratedToolDefinition tool)
+            {
+                return !File.Exists(CuratedToolApkPath(tool));
+            }).ToList();
+            if (missing.Count > 0)
+            {
+                foreach (CuratedToolDefinition tool in missing)
+                    SetItemStatus(CuratedToolListItem(tool), "尚未下載", Red);
+                MessageBox.Show(this, "下列程式尚未下載：\n\n" +
+                    String.Join("\n", missing.Select(delegate(CuratedToolDefinition tool) { return tool.DisplayName; }).ToArray()) +
+                    "\n\n請先使用「下載／更新選取」，完成後再安裝。",
+                    "阿輝自家工具", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (!await WaitForReadyDeviceAsync("阿輝自家工具安裝")) return;
+            List<Tuple<string, ListViewItem>> jobs = tools.Select(delegate(CuratedToolDefinition tool)
+            {
+                return Tuple.Create(CuratedToolApkPath(tool), CuratedToolListItem(tool));
+            }).ToList();
+            await InstallJobsAsync(jobs, tools.Count == 1 ? "快速安裝「" + tools[0].DisplayName + "」" :
+                "安裝選取的阿輝自家工具");
+        }
+
         private async Task InstallSelectedGroupAsync()
         {
             if (busy) return;
             ApkGroup group = SelectedGroup();
+            if (IsCuratedToolsGroup(group))
+            {
+                await InstallSelectedCuratedToolsAsync(false);
+                return;
+            }
             if (group == null || group.Apks.Count == 0)
             {
                 MessageBox.Show(this, "這個組合還沒有 APK 或 XAPK。", "沒有安裝套件", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            if (!await EnsureReadyDeviceAsync()) return;
+            if (!await WaitForReadyDeviceAsync("常用程式安裝")) return;
             ShowSelectedGroup();
             List<Tuple<string, ListViewItem>> jobs = new List<Tuple<string, ListViewItem>>();
             for (int i = 0; i < group.Apks.Count; i++) jobs.Add(Tuple.Create(group.Apks[i].Path, apkList.Items[i]));
@@ -8007,6 +10138,7 @@ namespace AndroidADBTools
             if (applyQuickSettingsButton != null) applyQuickSettingsButton.Enabled = enabled;
             if (readQuickSettingsButton != null) readQuickSettingsButton.Enabled = enabled;
             if (volumeMinimumButton != null) volumeMinimumButton.Enabled = enabled;
+            if (volumeHalfButton != null) volumeHalfButton.Enabled = enabled;
             if (volumeMaximumButton != null) volumeMaximumButton.Enabled = enabled;
             if (openUrlButton != null) openUrlButton.Enabled = enabled;
             if (screenshotButton != null) screenshotButton.Enabled = enabled;
@@ -8026,8 +10158,18 @@ namespace AndroidADBTools
             if (skipLargeDownloadCheck != null) skipLargeDownloadCheck.Enabled = enabled;
             if (maxDownloadSizeNumber != null) maxDownloadSizeNumber.Enabled = enabled && skipLargeDownloadCheck.Checked;
             if (urlTextBox != null) urlTextBox.Enabled = enabled;
+            if (scanInstalledAppsButton != null) scanInstalledAppsButton.Enabled = enabled;
+            if (installedAppSearchTextBox != null) installedAppSearchTextBox.Enabled = enabled;
+            if (hideNonRemovableAppsCheckBox != null) hideNonRemovableAppsCheckBox.Enabled = enabled;
+            if (checkAllInstalledAppsButton != null) checkAllInstalledAppsButton.Enabled = enabled && installedApps.Count > 0;
+            if (clearInstalledAppChecksButton != null) clearInstalledAppChecksButton.Enabled = enabled && installedApps.Count > 0;
             if (readBrightnessButton != null) readBrightnessButton.Enabled = enabled;
             if (applyBrightnessButton != null) applyBrightnessButton.Enabled = enabled;
+            if (saveBrightnessCalibrationButton != null)
+                saveBrightnessCalibrationButton.Enabled = enabled && pendingBrightnessCalibration != null;
+            if (applySavedBrightnessCalibrationButton != null)
+                applySavedBrightnessCalibrationButton.Enabled = enabled && currentBrightnessCalibration != null;
+            UpdateInstalledAppSelectionState();
             UpdateGroupActionButtons();
         }
 
